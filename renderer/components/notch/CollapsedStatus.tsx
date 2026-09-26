@@ -1,6 +1,6 @@
 import React from 'react'
 import { AnimatePresence, motion } from 'motion/react'
-import { Bluetooth, Headphones, Wifi } from 'lucide-react'
+import { BatteryCharging, BatteryLow, Bluetooth, Camera, Headphones, Mic, Wifi } from 'lucide-react'
 import { time12 } from '../../lib/time'
 import type { NowPlaying } from '../../hooks/useNowPlaying'
 import type { TaskStore } from '../../hooks/useTasks'
@@ -9,6 +9,7 @@ import { botAvatarPalette } from 'bot-avatars'
 import type { Avatar } from '../widgets/SettingsPanel'
 import type { ProviderLimits } from '../../hooks/useAiLimits'
 import type { PrivacyState } from '../../hooks/usePrivacy'
+import type { BatteryState } from '../../hooks/useBattery'
 import { useNow } from '../../hooks/useNow'
 import { WARNING } from '../widgets/AiOrbs'
 
@@ -28,10 +29,26 @@ const Pulse: React.FC = () => (
   </div>
 )
 
-/** Headphones, a Wi-Fi network or a Bluetooth device that just connected. */
-export type Moment = { kind: 'headphones' | 'wifi' | 'bluetooth'; name: string }
+/**
+ * Something that just happened, for the bar to show for a beat: a device
+ * connecting, an app taking the microphone or camera, the battery changing.
+ * `detail` is the word at the right edge; without one it says Connected.
+ */
+export type Moment = {
+  kind: 'headphones' | 'wifi' | 'bluetooth' | 'mic' | 'camera' | 'battery' | 'charging'
+  name: string
+  detail?: string
+}
 
-const MOMENT_ICON = { headphones: Headphones, wifi: Wifi, bluetooth: Bluetooth }
+const MOMENT_ICON = {
+  headphones: Headphones,
+  wifi: Wifi,
+  bluetooth: Bluetooth,
+  mic: Mic,
+  camera: Camera,
+  battery: BatteryLow,
+  charging: BatteryCharging,
+}
 
 interface CollapsedStatusProps {
   nowPlaying: NowPlaying | null
@@ -44,7 +61,9 @@ interface CollapsedStatusProps {
   right: 'time' | 'ai'
   limits: ProviderLimits[]
   privacy: PrivacyState
-  /** Something that just connected: the bar gives itself to it for a moment. */
+  /** The laptop's charge: shown only while it is low and not charging. */
+  battery?: BatteryState
+  /** Something that just happened: the bar gives itself to it for a moment. */
   moment?: Moment | null
 }
 
@@ -80,8 +99,15 @@ const Ring: React.FC<{ r: number; used: number }> = ({ r, used }) => (
 )
 
 /** The Island's privacy colours: orange for the microphone, green for the camera. */
-const MIC = '#FF9F0A'
-const CAMERA = '#30D158'
+export const MIC = '#FF9F0A'
+export const CAMERA = '#30D158'
+/** The phone's low-battery red. */
+export const LOW = '#FF453A'
+/** At or under this, the bar keeps the charge in view. */
+export const LOW_LEVEL = 0.2
+
+/** Moments with a colour of their own; the rest are white. */
+const MOMENT_COLOR: Partial<Record<Moment['kind'], string>> = { mic: MIC, camera: CAMERA, battery: LOW }
 
 /** The clock, 12-hour, with a small AM/PM. */
 const Clock: React.FC = () => {
@@ -96,16 +122,19 @@ const Clock: React.FC = () => {
 
 /**
  * The right of the bar: the chosen reading (the time, unless the left already
- * shows it, or the AI rings), then any privacy dots at the very edge.
+ * shows it, or the AI rings), a low battery when there is one, then any
+ * privacy dots at the very edge.
  */
-const Right: React.FC<{ right: 'time' | 'ai'; timeOnLeft: boolean; limits: ProviderLimits[]; privacy: PrivacyState }> = ({
-  right,
-  timeOnLeft,
-  limits,
-  privacy,
-}) => {
+const Right: React.FC<{
+  right: 'time' | 'ai'
+  timeOnLeft: boolean
+  limits: ProviderLimits[]
+  privacy: PrivacyState
+  battery?: BatteryState
+}> = ({ right, timeOnLeft, limits, privacy, battery }) => {
   const ai = right === 'ai' ? windows(limits) : null
   const dots = [privacy.camera && CAMERA, privacy.mic && MIC].filter(Boolean) as string[]
+  const low = Boolean(battery?.supported && !battery.charging && battery.level <= LOW_LEVEL)
 
   return (
     <div className="ml-auto flex shrink-0 items-center gap-2">
@@ -129,10 +158,29 @@ const Right: React.FC<{ right: 'time' | 'ai'; timeOnLeft: boolean; limits: Provi
         )
       )}
       <AnimatePresence>
+        {low && battery && (
+          <motion.span
+            key="battery"
+            aria-label="Battery low"
+            initial={{ opacity: 0, width: 0 }}
+            animate={{ opacity: 1, width: 'auto' }}
+            exit={{ opacity: 0, width: 0 }}
+            transition={spring}
+            className="flex items-center gap-1 overflow-hidden whitespace-nowrap text-[10px] font-semibold tabular-nums"
+            style={{ color: LOW }}
+          >
+            <BatteryLow size={12} strokeWidth={2.2} />
+            {Math.round(battery.level * 100)}%
+          </motion.span>
+        )}
         {dots.map((color) => (
           <motion.span
             key={color}
-            aria-label={color === MIC ? 'Microphone in use' : 'Camera in use'}
+            aria-label={
+              color === MIC
+                ? `Microphone in use${privacy.micApps.length ? `: ${privacy.micApps.join(', ')}` : ''}`
+                : `Camera in use${privacy.cameraApps.length ? `: ${privacy.cameraApps.join(', ')}` : ''}`
+            }
             initial={{ scale: 0, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
             exit={{ scale: 0, opacity: 0 }}
@@ -158,7 +206,7 @@ const clock = (ms: number) => {
  * music (just the art and a pulse — the title was a status line nobody read),
  * then what is left to do.
  */
-const Status: React.FC<CollapsedStatusProps> = ({ nowPlaying, tasks, timer, avatar, right, limits, privacy }) => {
+const Status: React.FC<CollapsedStatusProps> = ({ nowPlaying, tasks, timer, avatar, right, limits, privacy, battery }) => {
   const focusing = timer.isRunning
   const isPlaying = !focusing && Boolean(nowPlaying?.isPlaying)
   const open = focusing || isPlaying ? 0 : tasks.tasks.filter((task) => !task.done).length
@@ -257,13 +305,13 @@ const Status: React.FC<CollapsedStatusProps> = ({ nowPlaying, tasks, timer, avat
         )}
       </AnimatePresence>
 
-      <Right right={right} timeOnLeft={idle} limits={limits} privacy={privacy} />
+      <Right right={right} timeOnLeft={idle} limits={limits} privacy={privacy} battery={battery} />
     </div>
   )
 }
 
 /**
- * Something connecting, the AirPods way: its icon swings in from the left,
+ * Something happening, the AirPods way: its icon swings in from the left,
  * the name follows, and after a beat the whole thing slides back out and
  * the usual bar returns.
  */
@@ -277,7 +325,8 @@ const ConnectedMoment: React.FC<{ moment: Moment }> = ({ moment }) => {
     exit={{ opacity: 0, x: -8, transition: { duration: 0.18 } }}
   >
     <motion.span
-      className="grid shrink-0 text-white"
+      className="grid shrink-0"
+      style={{ color: MOMENT_COLOR[moment.kind] ?? 'white' }}
       initial={{ x: -18, rotate: -25, scale: 0.6 }}
       animate={{ x: 0, rotate: 0, scale: 1 }}
       transition={{ type: 'spring', stiffness: 520, damping: 18 }}
@@ -298,7 +347,7 @@ const ConnectedMoment: React.FC<{ moment: Moment }> = ({ moment }) => {
       animate={{ opacity: 1 }}
       transition={{ delay: 0.14, duration: 0.2 }}
     >
-      Connected
+      {moment.detail ?? 'Connected'}
     </motion.span>
   </motion.div>
   )

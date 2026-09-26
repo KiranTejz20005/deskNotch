@@ -152,6 +152,28 @@ const allApps = () =>
         })
       })
 
+/**
+ * The Start menu's name for an app, given what ConsentStore calls it: a
+ * package family ("5319275A.WhatsAppDesktop_cv1g1gvanyjgm", the id before the
+ * "!") or an exe path with "#" for "\". A classic app's id is its path when it
+ * has no AppUserModelID of its own, and a bare name ("Brave") when it does, so
+ * the exe's own name is tried against the list's names too. Null when nothing
+ * matches.
+ */
+export const nameOf = async (key: string) => {
+  const apps = await allApps()
+  const exe = key.replace(/#/g, '\\').toLowerCase()
+  const bare = exe.split('\\').pop()?.replace(/\.exe$/, '') ?? ''
+  return (
+    apps.find((app) => app.id.startsWith(`${key}!`) || app.id.toLowerCase() === exe)?.name ??
+    apps.find((app) => bare && app.name.toLowerCase() === bare)?.name ??
+    null
+  )
+}
+
+/** Fetches the list ahead of the first lookup, so a name is never waited for. */
+export const warmNames = () => void allApps()
+
 export function registerAppsIpc() {
   ipcMain.handle('apps:top', () => topApps())
   ipcMain.handle('apps:all', () => allApps())

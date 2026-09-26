@@ -8,6 +8,7 @@ import { registerMediaIpc } from './media'
 import { registerFilesIpc } from './files'
 import { registerPrivacyIpc } from './privacy'
 import { registerAppsIpc } from './apps'
+import { registerUsageIpc } from './usage'
 
 export function registerIpc() {
   registerStoreIpc()
@@ -19,4 +20,5 @@ export function registerIpc() {
   registerFilesIpc()
   registerPrivacyIpc()
   registerAppsIpc()
+  registerUsageIpc()
 }
