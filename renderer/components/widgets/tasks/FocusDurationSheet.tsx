@@ -40,9 +40,23 @@ export const FocusDurationSheet: React.FC<FocusDurationSheetProps> = ({
     }
   }
 
+  React.useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation()
+        onClose()
+      } else if (e.key === 'Enter') {
+        e.stopPropagation()
+        handleStart()
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [onClose, selectedMinutes])
+
   const handleStart = () => {
     onSaveMinutes(task, selectedMinutes)
-    timer.start(selectedMinutes)
+    timer.start(selectedMinutes * 60)
     onClose()
   }
 
@@ -58,7 +72,7 @@ export const FocusDurationSheet: React.FC<FocusDurationSheetProps> = ({
       exit={{ opacity: 0, scale: 0.94, y: 8 }}
       transition={spring}
       onClick={(e) => e.stopPropagation()}
-      className="absolute inset-x-2 bottom-2 top-2 z-30 flex flex-col justify-between overflow-hidden rounded-[16px] border border-white/15 bg-[#141418]/95 p-4 backdrop-blur-xl shadow-2xl"
+      className="absolute left-3 right-3 top-1/2 -translate-y-1/2 z-40 flex flex-col justify-between overflow-hidden rounded-[16px] border border-white/15 bg-[#16161a]/98 p-4 backdrop-blur-2xl shadow-2xl"
     >
       <div>
         <div className="flex items-center justify-between">

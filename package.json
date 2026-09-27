@@ -10,8 +10,13 @@
   "type": "module",
   "main": "app/main.js",
   "scripts": {
+<<<<<<< HEAD
     "dev": "npm run clean:port && node scripts/patch-nextron.cjs && nextron --startup-delay 20000",
     "dev:norestart": "node scripts/patch-nextron.cjs && set NEXTRON_NO_RESTART=1 && nextron --startup-delay 20000",
+=======
+    "dev": "nextron --startup-delay 5000",
+    "dev:norestart": "set NEXTRON_NO_RESTART=1 && nextron --startup-delay 5000",
+>>>>>>> 45343a7 (feat(dock): redesign bottom dock with direct feature buttons and remove plus menu)
     "build": "nextron build",
     "clean:port": "npx --yes kill-port 8888",
     "postinstall": "electron-builder install-app-deps"

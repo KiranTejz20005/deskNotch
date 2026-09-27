@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { motion } from 'motion/react'
 import { Check, Edit3, MoreHorizontal, Play, Bell, Clock, GripVertical } from 'lucide-react'
 import type { Task, TaskStore } from '../../../hooks/useTasks'
@@ -19,6 +19,37 @@ interface TaskRowProps {
 
 const spring = { type: 'spring' as const, stiffness: 400, damping: 30 }
 
+function formatReminderCountdown(task: Task, now: number): { text: string; isDue: boolean } {
+  if (!task.reminder) return { text: '', isDue: false }
+
+  if (task.reminderTimestamp) {
+    const diff = task.reminderTimestamp - now
+    if (diff <= 0) {
+      return { text: 'Due now', isDue: true }
+    }
+
+    // Only count down in seconds/minutes if it's a relative timer (e.g. "In 30 Minutes", "In 1 Hour")
+    const isRelativeTimer = task.reminder.startsWith('In ')
+
+    if (isRelativeTimer) {
+      const totalSec = Math.floor(diff / 1000)
+      const hours = Math.floor(totalSec / 3600)
+      const mins = Math.floor((totalSec % 3600) / 60)
+      const secs = totalSec % 60
+
+      if (hours > 0) {
+        return { text: `In ${hours}h ${mins}m`, isDue: false }
+      }
+      if (mins > 0) {
+        return { text: `In ${mins}m ${secs}s`, isDue: false }
+      }
+      return { text: `In ${secs}s`, isDue: false }
+    }
+  }
+
+  return { text: task.reminder, isDue: false }
+}
+
 export const TaskRow: React.FC<TaskRowProps> = ({
   task,
   tasks,
@@ -33,6 +64,15 @@ export const TaskRow: React.FC<TaskRowProps> = ({
   index,
 }) => {
   const [editValue, setEditValue] = useState(task.label)
+  const [now, setNow] = useState(Date.now())
+
+  useEffect(() => {
+    if (!task.reminder || task.done) return
+    const id = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(id)
+  }, [task.reminder, task.done])
+
+  const reminderInfo = formatReminderCountdown(task, now)
 
   const handleToggle = (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -120,9 +160,9 @@ export const TaskRow: React.FC<TaskRowProps> = ({
             {(task.reminder || task.minutes) && (
               <div className="mt-0.5 flex items-center gap-2 text-[10.5px] font-medium text-white/40">
                 {task.reminder && (
-                  <span className="flex items-center gap-1 text-emerald-400/90">
+                  <span className={`flex items-center gap-1 transition-colors ${reminderInfo.isDue ? 'text-rose-400 font-bold animate-pulse' : 'text-emerald-400/90'}`}>
                     <Bell size={10} />
-                    <span>{task.reminder}</span>
+                    <span>{reminderInfo.text}</span>
                   </span>
                 )}
                 {task.minutes && (
@@ -155,10 +195,10 @@ export const TaskRow: React.FC<TaskRowProps> = ({
 
         <button
           type="button"
-          title="Edit / Duration"
+          title="Rename task"
           onClick={(e) => {
             e.stopPropagation()
-            onOpenFocusSheet(task)
+            onStartRename(task)
           }}
           className="grid h-6 w-6 place-items-center rounded-[6px] text-white/50 hover:bg-white/10 hover:text-white transition-colors"
         >

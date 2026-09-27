@@ -20,11 +20,12 @@ const levelColor = (level: number, charging: boolean) => {
 
 export const StatusRail: React.FC = () => {
   const battery = useBattery()
-  if (!battery.supported) return null
+  if (!battery) return null
 
-  const percent = Math.round(battery.level * 100)
-  const color = levelColor(battery.level, battery.charging)
-  const isLow = battery.level <= 0.2 && !battery.charging
+  const levelFrac = battery.level / 100
+  const percent = battery.level
+  const color = levelColor(levelFrac, battery.charging)
+  const isLow = battery.isLow
 
   return (
     <div className="flex items-center gap-1.5">
@@ -35,7 +36,7 @@ export const StatusRail: React.FC = () => {
         <motion.div
           className="absolute inset-[1.5px] rounded-[1px] origin-left"
           style={{ backgroundColor: color }}
-          animate={{ scaleX: Math.max(0.05, battery.level) }}
+          animate={{ scaleX: Math.max(0.05, levelFrac) }}
           transition={spring}
         />
 

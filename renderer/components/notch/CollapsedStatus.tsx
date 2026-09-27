@@ -1,6 +1,22 @@
 import React from 'react'
 import { AnimatePresence, motion } from 'motion/react'
-import { BatteryCharging, BatteryLow, Bluetooth, Camera, Headphones, Mic, Wifi } from 'lucide-react'
+import {
+  BatteryCharging,
+  BatteryLow,
+  Bluetooth,
+  Camera,
+  Headphones,
+  Mic,
+  Wifi,
+  Sun,
+  Cloud,
+  CloudSun,
+  CloudRain,
+  Zap,
+  Snowflake,
+  CloudFog,
+  Battery,
+} from 'lucide-react'
 import { time12 } from '../../lib/time'
 import type { NowPlaying } from '../../hooks/useNowPlaying'
 import type { TaskStore } from '../../hooks/useTasks'
@@ -10,10 +26,22 @@ import type { Avatar } from '../widgets/SettingsPanel'
 import type { ProviderLimits } from '../../hooks/useAiLimits'
 import type { PrivacyState } from '../../hooks/usePrivacy'
 import type { BatteryState } from '../../hooks/useBattery'
+import type { WeatherData } from '../../hooks/useWeather'
+import type { BluetoothDevice } from '../../hooks/useBluetoothBattery'
 import { useNow } from '../../hooks/useNow'
 import { WARNING } from '../widgets/AiOrbs'
 
 const spring = { type: 'spring' as const, stiffness: 380, damping: 32 }
+
+const WEATHER_ICON = {
+  sun: Sun,
+  cloud: Cloud,
+  partly: CloudSun,
+  rain: CloudRain,
+  storm: Zap,
+  snow: Snowflake,
+  fog: CloudFog,
+}
 
 /** Three bars that only move while audio is playing. */
 const Pulse: React.FC = () => (
@@ -57,14 +85,16 @@ interface CollapsedStatusProps {
   /** The companion, for its colour (the focus ring); not drawn in the bar. */
   avatar?: Avatar | null
   photo?: string | null
-  /** The right side: the time, or the AI limits as rings. */
-  right: 'time' | 'ai'
+  /** The right side: the time, AI limits, weather, battery, or bluetooth. */
+  right: 'time' | 'ai' | 'weather' | 'battery' | 'bluetooth'
   limits: ProviderLimits[]
   privacy: PrivacyState
-  /** The laptop's charge: shown only while it is low and not charging. */
+  /** The laptop's charge. */
   battery?: BatteryState
   /** Something that just happened: the bar gives itself to it for a moment. */
   moment?: Moment | null
+  weather?: WeatherData | null
+  bluetooth?: BluetoothDevice | null
 }
 
 /** The tool with a session window (Claude), else the first with any reading:
@@ -121,41 +151,65 @@ const Clock: React.FC = () => {
 }
 
 /**
- * The right of the bar: the chosen reading (the time, unless the left already
- * shows it, or the AI rings), a low battery when there is one, then any
- * privacy dots at the very edge.
+ * The right of the bar: the chosen reading (time, AI, weather, battery, or bluetooth),
+ * then any privacy dots at the very edge.
  */
 const Right: React.FC<{
-  right: 'time' | 'ai'
+  right: 'time' | 'ai' | 'weather' | 'battery' | 'bluetooth'
   timeOnLeft: boolean
   limits: ProviderLimits[]
   privacy: PrivacyState
-  battery?: BatteryState
-}> = ({ right, timeOnLeft, limits, privacy, battery }) => {
+  weather?: WeatherData | null
+  battery?: BatteryState | null
+  bluetooth?: BluetoothDevice | null
+}> = ({ right, timeOnLeft, limits, privacy, weather, battery, bluetooth }) => {
   const ai = right === 'ai' ? windows(limits) : null
   const dots = [privacy.camera && CAMERA, privacy.mic && MIC].filter(Boolean) as string[]
   const low = Boolean(battery?.supported && !battery.charging && battery.level <= LOW_LEVEL)
 
+  const WeatherIconComponent = weather ? WEATHER_ICON[weather.icon] || Sun : Sun
+
   return (
     <div className="ml-auto flex shrink-0 items-center gap-2">
-      {right === 'time' ? (
-        !timeOnLeft && <Clock />
-      ) : (
-        ai && (
-          // The Watch's rings: the weekly window outside, the session inside,
-          // then both numbers in the same order as their labels, 5h / 7d.
-          <span className="flex items-center gap-1.5">
-            <svg viewBox="0 0 16 16" className="h-[13px] w-[13px] -rotate-90">
-              {ai.long !== null && <Ring r={7} used={ai.long} />}
-              {ai.session !== null && <Ring r={3.6} used={ai.session} />}
-            </svg>
-            <span className="text-[10.5px] font-semibold tabular-nums">
-              {ai.session !== null && <span style={{ color: colour(ai.session) }}>{Math.round(ai.session)}%</span>}
-              {ai.session !== null && ai.long !== null && <span className="text-white/30"> / </span>}
-              {ai.long !== null && <span style={{ color: colour(ai.long) }}>{Math.round(ai.long)}%</span>}
-            </span>
+      {right === 'weather' && weather ? (
+        <span className="flex items-center gap-1">
+          <WeatherIconComponent size={12} className={weather.icon === 'sun' ? 'text-amber-400 shrink-0' : 'text-sky-300 shrink-0'} />
+          <span className="text-[10.5px] font-semibold tabular-nums text-white/80">{Math.round(weather.temperature)}°</span>
+        </span>
+      ) : right === 'battery' && battery ? (
+        <span className="flex items-center gap-1">
+          {battery.charging ? (
+            <Zap size={11} className="text-amber-400 fill-amber-400 animate-pulse shrink-0" />
+          ) : (
+            <Battery size={13} className={battery.level <= LOW_LEVEL ? 'text-rose-400 shrink-0' : 'text-white/75 shrink-0'} />
+          )}
+          <span className={`text-[10.5px] font-semibold tabular-nums ${battery.level <= LOW_LEVEL && !battery.charging ? 'text-rose-400 font-bold' : 'text-white/80'}`}>
+            {Math.round(battery.level * 100)}%
           </span>
-        )
+        </span>
+      ) : right === 'bluetooth' && bluetooth && bluetooth.connected ? (
+        <span className="flex items-center gap-1">
+          {bluetooth.kind === 'headphones' ? (
+            <Headphones size={12} className="text-white/75 shrink-0" />
+          ) : (
+            <Bluetooth size={12} className="text-sky-400 shrink-0" />
+          )}
+          <span className="text-[10.5px] font-semibold tabular-nums text-white/80">{bluetooth.batteryPercent}%</span>
+        </span>
+      ) : right === 'ai' && ai ? (
+        <span className="flex items-center gap-1.5">
+          <svg viewBox="0 0 16 16" className="h-[13px] w-[13px] -rotate-90">
+            {ai.long !== null && <Ring r={7} used={ai.long} />}
+            {ai.session !== null && <Ring r={3.6} used={ai.session} />}
+          </svg>
+          <span className="text-[10.5px] font-semibold tabular-nums">
+            {ai.session !== null && <span style={{ color: colour(ai.session) }}>{Math.round(ai.session)}%</span>}
+            {ai.session !== null && ai.long !== null && <span className="text-white/30"> / </span>}
+            {ai.long !== null && <span style={{ color: colour(ai.long) }}>{Math.round(ai.long)}%</span>}
+          </span>
+        </span>
+      ) : (
+        !timeOnLeft && <Clock />
       )}
       <AnimatePresence>
         {low && battery && (
@@ -206,7 +260,7 @@ const clock = (ms: number) => {
  * music (just the art and a pulse — the title was a status line nobody read),
  * then what is left to do.
  */
-const Status: React.FC<CollapsedStatusProps> = ({ nowPlaying, tasks, timer, avatar, right, limits, privacy, battery }) => {
+const Status: React.FC<CollapsedStatusProps> = ({ nowPlaying, tasks, timer, avatar, right, limits, privacy, weather, battery, bluetooth }) => {
   const focusing = timer.isRunning
   const isPlaying = !focusing && Boolean(nowPlaying?.isPlaying)
   const open = focusing || isPlaying ? 0 : tasks.tasks.filter((task) => !task.done).length
@@ -305,7 +359,7 @@ const Status: React.FC<CollapsedStatusProps> = ({ nowPlaying, tasks, timer, avat
         )}
       </AnimatePresence>
 
-      <Right right={right} timeOnLeft={idle} limits={limits} privacy={privacy} battery={battery} />
+      <Right right={right} timeOnLeft={idle} limits={limits} privacy={privacy} weather={weather} battery={battery} bluetooth={bluetooth} />
     </div>
   )
 }

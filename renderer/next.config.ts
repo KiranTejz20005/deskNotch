@@ -8,6 +8,7 @@ const config: NextConfig = {
     unoptimized: true,
   },
   devIndicators: false,
+  allowedDevOrigins: ['192.168.1.36', 'localhost', '127.0.0.1', '192.168.0.0/16'],
 }
 
 export default config

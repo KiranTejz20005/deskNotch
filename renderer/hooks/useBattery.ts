@@ -6,6 +6,8 @@ export interface BatteryState {
   supported: boolean
 }
 
+export type BatteryData = BatteryState
+
 interface BatteryManager extends EventTarget {
   level: number
   charging: boolean
@@ -55,12 +57,15 @@ export function useBattery(): BatteryState {
       setState({ level: battery.level, charging: battery.charging, supported: true })
     }
 
-    getBattery.call(navigator).then((found) => {
-      battery = found
-      sync()
-      battery.addEventListener('levelchange', sync)
-      battery.addEventListener('chargingchange', sync)
-    })
+    getBattery()
+      .then((mgr) => {
+        if (unmounted) return
+        battery = mgr
+        sync()
+        battery.addEventListener('levelchange', sync)
+        battery.addEventListener('chargingchange', sync)
+      })
+      .catch(() => {})
 
     return () => {
       unmounted = true
