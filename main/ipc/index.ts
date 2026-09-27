@@ -9,7 +9,6 @@ import { registerFilesIpc } from './files'
 import { registerPrivacyIpc } from './privacy'
 import { registerAppsIpc } from './apps'
 import { registerUsageIpc } from './usage'
-import { registerBatteryIpc } from './battery'
 import { registerDisplayIpc } from './display'
 import { registerBluetoothIpc } from './bluetooth'
 import { registerBatteryIpc } from './battery'
@@ -31,7 +30,6 @@ export function registerIpc() {
   registerPrivacyIpc()
   registerAppsIpc()
   registerUsageIpc()
-  registerBatteryIpc()
   registerDisplayIpc()
   registerBluetoothIpc()
   registerBatteryIpc()

@@ -288,7 +288,6 @@ export default function HomePage() {
   // The battery: unplugging and plugging in each get a moment with the charge,
   // and running low gets one at each step down. A desktop never changes state,
   // so it never says anything; the state at start is not news.
-  const battery = useBattery()
   const lastCharging = useRef<boolean | null>(null)
   useEffect(() => {
     if (!battery.supported) return
@@ -383,9 +382,6 @@ export default function HomePage() {
   const appsSide = chosenApps === 'auto' || chosenApps === dockSideNow ? (dockSideNow === 'bottom' ? 'right' : 'bottom') : chosenApps
 
   const isPlayingAudio = Boolean(nowPlaying?.isPlaying)
-  // The style only changes the background: the glow follows the album (when
-  // that setting is on) and the readings stay white, whatever the material.
-  const tint = isPlayingAudio && settings.albumTint ? albumTint : '255, 255, 255'
   const orbTint = '255, 255, 255'
 
   const shownLimits = settings.showAiUsage || nothingChosen ? visibleLimits(aiLimits, settings.hiddenLimits) : []
@@ -520,8 +516,6 @@ export default function HomePage() {
                   {view === 'glance' ? (
                     <AloneContext.Provider value={widths.length === 1}>
                     <div className={`relative flex h-full items-start ${widths.length === 1 ? 'justify-center' : ''}`} style={{ gap: TILE_GAP }}>
-
-
                       {visibleCardIds.has('companion') && (
                         <CompanionTile
                           avatar={settings.avatar}
@@ -625,7 +619,6 @@ export default function HomePage() {
                   battery={battery}
                   moment={moment}
                   weather={weather}
-                  battery={battery}
                   bluetooth={bluetooth}
                 />
               )

@@ -37,20 +37,13 @@ while ($true) {
   Start-Sleep -Milliseconds 500
 }`
 
-/** How long after the last ask the sampler is kept: the page polls every 2 s. */
-const IDLE = 6000
-
 let sampler: ChildProcess | null = null
 let gpu: number | null = null
-let wantedUntil = 0
-let reaper: ReturnType<typeof setInterval> | undefined
 
 const stop = () => {
   sampler?.kill()
   sampler = null
   gpu = null
-  clearInterval(reaper)
-  reaper = undefined
 }
 
 const start = () => {

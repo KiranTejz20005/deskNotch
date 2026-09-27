@@ -87,12 +87,8 @@ export const DEFAULT_SETTINGS: Settings = {
   showThermals: false,
   showAvatar: true,
   showFocus: false,
-<<<<<<< HEAD
   showAiUsage: true,
   showStatus: true,
-=======
-  showAiUsage: false,
->>>>>>> 45343a7 (feat(dock): redesign bottom dock with direct feature buttons and remove plus menu)
   ambientVideo: true,
   albumTint: true,
   startOnBoot: false,

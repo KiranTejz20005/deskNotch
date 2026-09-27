@@ -20,12 +20,12 @@ const levelColor = (level: number, charging: boolean) => {
 
 export const StatusRail: React.FC = () => {
   const battery = useBattery()
-  if (!battery) return null
+  if (!battery || !battery.supported) return null
 
-  const levelFrac = battery.level / 100
-  const percent = battery.level
+  const levelFrac = battery.level
+  const percent = Math.round(battery.level * 100)
   const color = levelColor(levelFrac, battery.charging)
-  const isLow = battery.isLow
+  const isLow = !battery.charging && battery.level <= 0.2
 
   return (
     <div className="flex items-center gap-1.5">
