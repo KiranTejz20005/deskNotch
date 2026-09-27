@@ -1,50 +1,79 @@
 import { useEffect, useState } from 'react'
 
-export interface BatteryState {
+export interface BatteryData {
   level: number
   charging: boolean
-  supported: boolean
+  isLow: boolean
 }
 
-interface BatteryManager extends EventTarget {
-  level: number
-  charging: boolean
-}
-
-/** Laptop charge, via the browser's own battery API — no native code needed. */
-export function useBattery(): BatteryState {
-  const [state, setState] = useState<BatteryState>({
-    level: 1,
-    charging: false,
-    supported: false,
-  })
+export function useBattery(): BatteryData | null {
+  const [battery, setBattery] = useState<BatteryData | null>(null)
 
   useEffect(() => {
-    const getBattery = (navigator as Navigator & {
-      getBattery?: () => Promise<BatteryManager>
-    }).getBattery
+    let mounted = true
+    let batteryApi: any = null
 
-    if (!getBattery) return
-
-    let battery: BatteryManager | null = null
-
-    const sync = () => {
-      if (!battery) return
-      setState({ level: battery.level, charging: battery.charging, supported: true })
+    const updateFromManager = (mgr: any) => {
+      if (!mounted || !mgr) return
+      const level = Math.round(mgr.level * 100)
+      const charging = Boolean(mgr.charging)
+      const isLow = level <= 20 && !charging
+      setBattery((prev) => {
+        if (prev && prev.level === level && prev.charging === charging && prev.isLow === isLow) {
+          return prev
+        }
+        return { level, charging, isLow }
+      })
     }
 
-    getBattery.call(navigator).then((found) => {
-      battery = found
-      sync()
-      battery.addEventListener('levelchange', sync)
-      battery.addEventListener('chargingchange', sync)
-    })
+    const fallbackIpc = async () => {
+      try {
+        const res = await window.bridge?.invoke<BatteryData | null>('battery:get')
+        if (mounted && res && typeof res.level === 'number') {
+          setBattery(res)
+        }
+      } catch {}
+    }
+
+    if (typeof navigator !== 'undefined' && 'getBattery' in navigator) {
+      ;(navigator as any)
+        .getBattery()
+        .then((mgr: any) => {
+          if (!mounted) return
+          batteryApi = mgr
+          updateFromManager(mgr)
+
+          const handleChange = () => updateFromManager(mgr)
+          mgr.addEventListener('chargingchange', handleChange)
+          mgr.addEventListener('levelchange', handleChange)
+        })
+        .catch(() => {
+          fallbackIpc()
+        })
+    } else {
+      fallbackIpc()
+    }
+
+    // Conservative 30s polling fallback if events miss or IPC is used
+    const pollId = setInterval(() => {
+      if (batteryApi) {
+        updateFromManager(batteryApi)
+      } else {
+        fallbackIpc()
+      }
+    }, 30000)
 
     return () => {
-      battery?.removeEventListener('levelchange', sync)
-      battery?.removeEventListener('chargingchange', sync)
+      mounted = false
+      clearInterval(pollId)
+      if (batteryApi) {
+        try {
+          batteryApi.removeEventListener('chargingchange', updateFromManager)
+          batteryApi.removeEventListener('levelchange', updateFromManager)
+        } catch {}
+      }
     }
   }, [])
 
-  return state
+  return battery
 }

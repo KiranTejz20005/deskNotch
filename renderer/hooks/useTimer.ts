@@ -13,6 +13,46 @@ export interface Timer {
   reset: () => void
 }
 
+function playChime() {
+  try {
+    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext
+    if (!AudioCtx) return
+    const ctx = new AudioCtx()
+    const osc = ctx.createOscillator()
+    const gain = ctx.createGain()
+    osc.type = 'sine'
+    osc.frequency.setValueAtTime(587.33, ctx.currentTime) // D5
+    osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.3) // A5
+    gain.gain.setValueAtTime(0.3, ctx.currentTime)
+    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.8)
+    osc.connect(gain)
+    gain.connect(ctx.destination)
+    osc.start()
+    osc.stop(ctx.currentTime + 0.8)
+  } catch {
+    // ignore audio errors
+  }
+}
+
+function notifyTimerComplete() {
+  playChime()
+  if (typeof Notification !== 'undefined') {
+    if (Notification.permission === 'granted') {
+      new Notification('Focus Session Complete! 🎯', {
+        body: 'Your timer has ended. Time to take a short break!',
+      })
+    } else if (Notification.permission !== 'denied') {
+      void Notification.requestPermission().then((permission) => {
+        if (permission === 'granted') {
+          new Notification('Focus Session Complete! 🎯', {
+            body: 'Your timer has ended. Time to take a short break!',
+          })
+        }
+      })
+    }
+  }
+}
+
 export function useTimer(): Timer {
   const [remainingMs, setRemainingMs] = useState(0)
   const [durationMs, setDurationMs] = useState(0)
@@ -30,6 +70,7 @@ export function useTimer(): Timer {
         setIsRunning(false)
         setFinished(true)
         deadlineRef.current = null
+        notifyTimerComplete()
       }
     }
 

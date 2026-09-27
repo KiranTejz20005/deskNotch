@@ -1,7 +1,7 @@
 import { BrowserWindow } from 'electron'
 import { spawn, ChildProcess } from 'child_process'
 import { readStore } from './store'
-import { resolveTargetDisplay } from './display'
+import { resolveTargetDisplay, getAllActiveWindows } from './display'
 
 let watcherProcess: ChildProcess | null = null
 let mainWindowRef: BrowserWindow | null = null
@@ -200,9 +200,10 @@ function handleFullscreenChange(rawResult: string) {
 }
 
 function hideWindow() {
-  if (!mainWindowRef || mainWindowRef.isDestroyed()) return
   isHiddenByFullscreen = true
-  mainWindowRef.hide()
+  for (const win of getAllActiveWindows()) {
+    if (win && !win.isDestroyed()) win.hide()
+  }
 }
 
 export function isCurrentFullscreenMatch(): boolean {
@@ -214,7 +215,7 @@ export function isCurrentFullscreenMatch(): boolean {
   const parts = lastRawResult.split(',').map(Number)
   if (parts.length === 4 && !parts.some(isNaN)) {
     const [fsLeft, fsTop, fsRight, fsBottom] = parts
-    const selectedDisplayId = (settings.selectedDisplayId as string) || 'primary'
+    const selectedDisplayId = (settings.selectedDisplayId as string) || 'both'
     const targetDisplay = resolveTargetDisplay(selectedDisplayId)
     const targetLeft = targetDisplay.bounds.x
     const targetTop = targetDisplay.bounds.y
@@ -226,10 +227,13 @@ export function isCurrentFullscreenMatch(): boolean {
 }
 
 function restoreWindow() {
-  if (!mainWindowRef || mainWindowRef.isDestroyed()) return
   isHiddenByFullscreen = false
-  mainWindowRef.showInactive()
-  mainWindowRef.setAlwaysOnTop(true, 'screen-saver')
-  mainWindowRef.setVisibleOnAllWorkspaces(true)
-  mainWindowRef.setSkipTaskbar(true)
+  for (const win of getAllActiveWindows()) {
+    if (win && !win.isDestroyed()) {
+      win.showInactive()
+      win.setAlwaysOnTop(true, 'screen-saver')
+      win.setVisibleOnAllWorkspaces(true)
+      win.setSkipTaskbar(true)
+    }
+  }
 }

@@ -25,6 +25,13 @@ export interface Settings {
   /** What the glance shows. */
   showMusic: boolean
   showTasks: boolean
+  showVolume: boolean
+  showStopwatch: boolean
+  showClipboard: boolean
+  showWeather: boolean
+  showDnd: boolean
+  showNotifications: boolean
+  showThermals: boolean
   showAvatar: boolean
   showFocus: boolean
   showAiUsage: boolean
@@ -37,7 +44,7 @@ export interface Settings {
   /** Views taken off the dock ('glance', 'desk', 'files'); Settings and the lock always stay. */
   hiddenViews: string[]
   /** What the closed notch shows on its right. */
-  collapsedRight: 'time' | 'ai'
+  collapsedRight: 'time' | 'ai' | 'weather' | 'battery' | 'bluetooth'
   /** Open the notch on each new screenshot. */
   catchScreenshots: boolean
   /** The apps bar under the notch: Windows' most used, your favourites, or none. */
@@ -58,6 +65,8 @@ export interface Settings {
   /** AI limits switched off, by key ("Claude-SESSION"). Hidden rather than
    *  shown, so a limit a tool adds later appears without asking. */
   hiddenLimits: string[]
+  /** Global keyboard shortcut to open deskNotch from anywhere in Windows. */
+  keyboardShortcut: string
   /** The monitor on which deskNotch appears; 'primary' or a display ID string. */
   selectedDisplayId?: string
   /** Hide deskNotch when another app enters fullscreen. */
@@ -67,9 +76,16 @@ export interface Settings {
 export const DEFAULT_SETTINGS: Settings = {
   showMusic: true,
   showTasks: true,
+  showVolume: false,
+  showStopwatch: false,
+  showClipboard: false,
+  showWeather: false,
+  showDnd: false,
+  showNotifications: false,
+  showThermals: false,
   showAvatar: true,
   showFocus: false,
-  showAiUsage: true,
+  showAiUsage: false,
   ambientVideo: true,
   albumTint: true,
   startOnBoot: false,
@@ -87,7 +103,8 @@ export const DEFAULT_SETTINGS: Settings = {
   companionSleeps: 'time',
   focusMinutes: 25,
   hiddenLimits: [],
-  selectedDisplayId: 'primary',
+  keyboardShortcut: 'Ctrl+Alt+Space',
+  selectedDisplayId: 'both',
   hideOnFullscreen: true,
 }
 
@@ -224,6 +241,151 @@ const Group: React.FC<{ children: React.ReactNode; note?: string }> = ({ childre
   </div>
 )
 
+function parseAccelerator(e: React.KeyboardEvent): string | null {
+  if (e.key === 'Escape') return 'CANCEL'
+
+  const parts: string[] = []
+  if (e.ctrlKey) parts.push('Ctrl')
+  if (e.altKey) parts.push('Alt')
+  if (e.shiftKey) parts.push('Shift')
+  if (e.metaKey) parts.push('Cmd')
+
+  if (['Control', 'Alt', 'Shift', 'Meta'].includes(e.key)) {
+    return null
+  }
+
+  let mainKey = e.key
+  if (e.code === 'Space' || e.key === ' ') mainKey = 'Space'
+  else if (e.code.startsWith('Key')) mainKey = e.code.substring(3).toUpperCase()
+  else if (e.code.startsWith('Digit')) mainKey = e.code.substring(5)
+  else if (e.code.startsWith('F') && !isNaN(Number(e.code.substring(1)))) mainKey = e.code
+  else if (e.code === 'ArrowUp') mainKey = 'Up'
+  else if (e.code === 'ArrowDown') mainKey = 'Down'
+  else if (e.code === 'ArrowLeft') mainKey = 'Left'
+  else if (e.code === 'ArrowRight') mainKey = 'Right'
+  else if (mainKey.length === 1) mainKey = mainKey.toUpperCase()
+
+  if (parts.length === 0) return null
+
+  parts.push(mainKey)
+  return parts.join('+')
+}
+
+const ShortcutSettingRow: React.FC<{
+  shortcut: string
+  onChange: (newShortcut: string) => void
+}> = ({ shortcut, onChange }) => {
+  const [recording, setRecording] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [livePreview, setLivePreview] = useState<string | null>(null)
+
+  const handleKeyDown = async (e: React.KeyboardEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+
+    const acc = parseAccelerator(e)
+    if (acc === 'CANCEL') {
+      setRecording(false)
+      setLivePreview(null)
+      setError(null)
+      return
+    }
+
+    if (!acc) {
+      const mods: string[] = []
+      if (e.ctrlKey) mods.push('Ctrl')
+      if (e.altKey) mods.push('Alt')
+      if (e.shiftKey) mods.push('Shift')
+      if (e.metaKey) mods.push('Cmd')
+      if (mods.length > 0) setLivePreview(`${mods.join(' + ')} + ...`)
+      return
+    }
+
+    setLivePreview(null)
+    const res = await window.bridge?.invoke<{ success: boolean; shortcut: string; error?: string }>('shortcut:set', acc)
+    if (res?.success) {
+      onChange(res.shortcut)
+      setRecording(false)
+      setError(null)
+    } else {
+      setError(res?.error || 'Shortcut unavailable. It is already being used by another application.')
+      setRecording(false)
+    }
+  }
+
+  const handleReset = async () => {
+    setError(null)
+    setRecording(false)
+    const res = await window.bridge?.invoke<{ success: boolean; shortcut: string; error?: string }>('shortcut:reset')
+    if (res?.success) {
+      onChange(res.shortcut)
+    } else if (res?.error) {
+      setError(res.error)
+    }
+  }
+
+  return (
+    <div className="px-3 py-2">
+      <div className="flex items-center justify-between gap-4">
+        <div className="min-w-0">
+          <div className="text-[12.5px] font-medium text-white/90">Open deskNotch</div>
+          <div className="mt-0.5 text-[10.5px] leading-snug text-white/40">
+            Global keyboard shortcut to open deskNotch from anywhere
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 shrink-0">
+          {recording ? (
+            <div
+              tabIndex={0}
+              autoFocus
+              onKeyDown={handleKeyDown}
+              onBlur={() => {
+                setRecording(false)
+                setLivePreview(null)
+              }}
+              className="h-[24px] px-3 rounded-[6px] bg-amber-500/20 border border-amber-400/40 text-amber-300 text-[11px] font-medium flex items-center animate-pulse outline-none cursor-pointer select-none"
+            >
+              {livePreview || 'Press key combination...'}
+            </div>
+          ) : (
+            <div className="flex items-center gap-1.5">
+              <span className="px-2 py-0.5 rounded-[5px] bg-white/10 text-[11px] font-mono font-semibold text-white/90 border border-white/15">
+                {shortcut ? shortcut.replace(/\+/g, ' + ') : 'None'}
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setRecording(true)
+                  setError(null)
+                }}
+                className="h-[22px] px-2.5 rounded-full bg-white/[0.08] hover:bg-white/20 text-[10.5px] font-medium text-white/80 transition-colors"
+              >
+                Change
+              </button>
+              {shortcut !== 'Ctrl+Alt+Space' && (
+                <button
+                  type="button"
+                  onClick={handleReset}
+                  className="h-[22px] px-2 rounded-full bg-white/[0.04] hover:bg-white/15 text-[10px] text-white/40 hover:text-white/80 transition-colors"
+                  title="Reset to Ctrl + Alt + Space"
+                >
+                  Reset
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+      {error && (
+        <div className="mt-1.5 px-2 py-1 rounded-[6px] bg-red-500/15 border border-red-500/30 text-red-300 text-[10.5px] leading-tight">
+          {error}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Sections ────────────────────────────────────────────────────────────────
 
 type SectionId = 'glance' | 'companion' | 'closed' | 'apps' | 'tabs' | 'look' | 'general'
@@ -280,9 +442,21 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onChange
   const count = cardCount(settings, aiCards)
   /** Whether switching this on still fits the glance. */
   const fits = (key: keyof Settings) => cardCount({ ...settings, [key]: true }, aiCards) <= MAX_CARDS
-  const card = (key: 'showMusic' | 'showTasks' | 'showAvatar' | 'showAiUsage', label: string) => (
-    <Switch label={label} on={settings[key]} disabled={!settings[key] && !fits(key)} onChange={(v) => set(key, v)} />
-  )
+  const card = (
+    key:
+      | 'showMusic'
+      | 'showTasks'
+      | 'showAvatar'
+      | 'showAiUsage'
+      | 'showVolume'
+      | 'showStopwatch'
+      | 'showClipboard'
+      | 'showWeather'
+      | 'showDnd'
+      | 'showNotifications'
+      | 'showThermals',
+    label: string,
+  ) => <Switch label={label} on={settings[key]} disabled={!settings[key] && !fits(key)} onChange={(v) => set(key, v)} />
   const hiddenViews = settings.hiddenViews ?? []
 
   const content: Record<SectionId, React.ReactNode> = {
@@ -297,6 +471,18 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onChange
           </Row>
           <Row title="Next task" detail="Your next few tasks, tickable">
             {card('showTasks', 'Next task')}
+          </Row>
+          <Row title="Weather" detail="Current temperature & 4-day forecast">
+            {card('showWeather', 'Weather')}
+          </Row>
+          <Row title="Focus Mode (DND)" detail="Windows Do Not Disturb toggle">
+            {card('showDnd', 'Focus Mode')}
+          </Row>
+          <Row title="Notification Peek" detail="Windows system notifications stream">
+            {card('showNotifications', 'Notification Peek')}
+          </Row>
+          <Row title="Laptop Thermals" detail="CPU & System temperature hardware monitor">
+            {card('showThermals', 'Laptop Thermals')}
           </Row>
           <Row
             title="AI usage"
@@ -386,7 +572,10 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onChange
               id="right"
               options={[
                 { id: 'time', label: 'Time' },
-                { id: 'ai', label: 'AI usage' },
+                { id: 'ai', label: 'AI' },
+                { id: 'weather', label: 'Weather' },
+                { id: 'battery', label: 'Battery' },
+                { id: 'bluetooth', label: 'Bluetooth' },
               ] as const}
               value={settings.collapsedRight ?? 'time'}
               onChange={(v) => set('collapsedRight', v)}
@@ -523,6 +712,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onChange
     general: (
       <>
         <Group>
+          <ShortcutSettingRow shortcut={settings.keyboardShortcut || 'Ctrl+Alt+Space'} onChange={(acc) => set('keyboardShortcut', acc)} />
           <Row title="Start with Windows" detail="Launch deskNotch automatically when you log into Windows">
             <Switch label="Start with Windows" on={settings.startOnBoot} onChange={(v) => set('startOnBoot', v)} />
           </Row>
@@ -532,35 +722,42 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onChange
         </Group>
         <Group>
           <Row title="Display" detail="Choose which monitor deskNotch appears on">
-            {displays.length <= 3 ? (
-              <Segmented
-                id="display"
-                options={[
-                  { id: 'primary', label: 'Primary' },
-                  ...displays.map((d, i) => ({
-                    id: d.id,
-                    label: d.isPrimary ? `Display ${i + 1} ★` : `Display ${i + 1}`,
-                  })),
-                ]}
-                value={settings.selectedDisplayId ?? 'primary'}
-                onChange={(v) => set('selectedDisplayId', v)}
-              />
-            ) : (
-              <select
-                value={settings.selectedDisplayId ?? 'primary'}
-                onChange={(e) => set('selectedDisplayId', e.target.value)}
-                className="h-[24px] max-w-[190px] rounded-[7px] bg-white/[0.1] px-2 text-[11px] font-medium text-white outline-none border border-white/10"
-              >
-                <option value="primary" className="bg-[#141418] text-white">
-                  Primary display
-                </option>
-                {displays.map((d, i) => (
-                  <option key={d.id} value={d.id} className="bg-[#141418] text-white">
-                    {d.label || `Display ${i + 1}`}
-                  </option>
-                ))}
-              </select>
-            )}
+            {(() => {
+              const displayOpts = [
+                ...displays.map((d, i) => ({
+                  id: d.id,
+                  label: `Display ${i + 1}`,
+                })),
+                ...(displays.length > 1 ? [{ id: 'both', label: 'Both' }] : []),
+              ]
+              const currentVal =
+                settings.selectedDisplayId && settings.selectedDisplayId !== 'primary'
+                  ? settings.selectedDisplayId
+                  : displays.length > 1
+                    ? 'both'
+                    : (displays[0]?.id || 'both')
+
+              return displayOpts.length <= 4 ? (
+                <Segmented
+                  id="display"
+                  options={displayOpts}
+                  value={currentVal}
+                  onChange={(v) => set('selectedDisplayId', v)}
+                />
+              ) : (
+                <select
+                  value={currentVal}
+                  onChange={(e) => set('selectedDisplayId', e.target.value)}
+                  className="h-[24px] max-w-[190px] rounded-[7px] bg-white/[0.1] px-2 text-[11px] font-medium text-white outline-none border border-white/10"
+                >
+                  {displayOpts.map((opt) => (
+                    <option key={opt.id} value={opt.id} className="bg-[#141418] text-white">
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              )
+            })()}
           </Row>
         </Group>
       </>

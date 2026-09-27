@@ -53,21 +53,36 @@ export const TaskContextMenu: React.FC<TaskContextMenuProps> = ({
     }
   }, [onClose])
 
+  const [showCustomPicker, setShowCustomPicker] = useState(false)
+  const [customDateTime, setCustomDateTime] = useState('')
+
   const reminderOptions = [
     { label: 'In 30 Minutes', value: 'In 30 Minutes' },
     { label: 'In 1 Hour', value: 'In 1 Hour' },
     { label: 'This Evening', value: 'This Evening' },
     { label: 'Tomorrow Morning', value: 'Tomorrow Morning' },
+    { label: 'Custom...', value: 'custom' },
     { label: 'Clear Reminder', value: null },
   ]
 
   const handleReminderSelect = (val: string | null) => {
+    if (val === 'custom') {
+      setShowCustomPicker(true)
+      return
+    }
     tasks.setReminder(task.id, val)
     onClose()
   }
 
+  const handleCustomSubmit = () => {
+    if (customDateTime) {
+      tasks.setReminder(task.id, `Custom:${customDateTime}`)
+    }
+    onClose()
+  }
+
   const handleMoveTomorrow = () => {
-    tasks.setReminder(task.id, 'Tomorrow Morning')
+    tasks.moveToTomorrow(task.id)
     onClose()
   }
 
@@ -79,9 +94,9 @@ export const TaskContextMenu: React.FC<TaskContextMenuProps> = ({
       animate={{ opacity: 1, scale: 1, y: 0 }}
       exit={{ opacity: 0, scale: 0.94 }}
       transition={spring}
-      style={{ top: `${Math.max(36, Math.min(position.y, 160))}px` }}
+      style={{ top: `${Math.max(12, Math.min(position.y - 50, 45))}px` }}
       onClick={(e) => e.stopPropagation()}
-      className="absolute right-3 z-50 w-48 rounded-[14px] border border-white/15 bg-[#1a1a1e]/98 p-1.5 backdrop-blur-2xl shadow-2xl text-[12px] font-medium text-white/90"
+      className="absolute right-3 z-50 w-52 rounded-[14px] border border-white/15 bg-[#1a1a1e]/98 p-1.5 backdrop-blur-2xl shadow-2xl text-[12px] font-medium text-white/90 max-h-[300px] overflow-y-auto scrollbar-none"
     >
       <button
         type="button"
@@ -131,46 +146,74 @@ export const TaskContextMenu: React.FC<TaskContextMenuProps> = ({
         <span>Set Time Limit...</span>
       </button>
 
-      {/* Remind Me with Submenu */}
-      <div
-        className="relative"
-        onMouseEnter={() => setShowRemindSubmenu(true)}
-        onMouseLeave={() => setShowRemindSubmenu(false)}
-      >
+      {/* Remind Me with Expandable Submenu (Click to toggle) */}
+      <div className="flex flex-col">
         <button
           type="button"
+          onClick={(e) => {
+            e.stopPropagation()
+            setShowRemindSubmenu((v) => !v)
+          }}
           className="flex w-full items-center justify-between rounded-[8px] px-2.5 py-1.5 hover:bg-white/10 hover:text-white transition-colors"
         >
           <div className="flex items-center gap-2.5">
             <Bell size={13} className="text-white/70" />
             <span>Remind Me</span>
           </div>
-          <ChevronRight size={13} className="text-white/40" />
+          <ChevronRight size={13} className={`text-white/40 transition-transform duration-200 ${showRemindSubmenu ? 'rotate-90' : ''}`} />
         </button>
 
         <AnimatePresence>
           {showRemindSubmenu && (
             <motion.div
               data-notch-part="true"
-              initial={{ opacity: 0, x: 6 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: 6 }}
-              transition={{ duration: 0.12 }}
-              className="absolute right-full top-0 mr-1 w-44 rounded-[12px] border border-white/15 bg-[#1a1a1e]/98 p-1.5 backdrop-blur-2xl shadow-2xl z-50"
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.15 }}
+              className="flex flex-col gap-0.5 overflow-hidden pl-3 pr-1 py-1 my-0.5 rounded-[8px] bg-white/[0.06] border border-white/[0.08]"
             >
-              {reminderOptions.map((opt) => (
-                <button
-                  key={opt.label}
-                  type="button"
-                  onClick={() => handleReminderSelect(opt.value)}
-                  className="flex w-full items-center justify-between rounded-[7px] px-2.5 py-1.5 text-[11.5px] hover:bg-white/10 hover:text-white transition-colors"
-                >
-                  <span>{opt.label}</span>
-                  {task.reminder === opt.value && opt.value !== null && (
-                    <span className="text-[10px] font-bold text-emerald-400">✓</span>
-                  )}
-                </button>
-              ))}
+              {showCustomPicker ? (
+                <div className="flex flex-col gap-1.5 p-1">
+                  <input
+                    type="datetime-local"
+                    value={customDateTime}
+                    onChange={(e) => setCustomDateTime(e.target.value)}
+                    className="w-full rounded-[6px] border border-white/15 bg-white/10 px-1.5 py-1 text-[11px] font-medium text-white outline-none focus:border-white/40 cursor-pointer"
+                  />
+                  <div className="flex items-center justify-end gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setShowCustomPicker(false)}
+                      className="rounded px-2 py-0.5 text-[10.5px] text-white/50 hover:text-white"
+                    >
+                      Back
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleCustomSubmit}
+                      disabled={!customDateTime}
+                      className="rounded bg-emerald-500 px-2.5 py-0.5 text-[10.5px] font-bold text-black disabled:opacity-40"
+                    >
+                      Set
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                reminderOptions.map((opt) => (
+                  <button
+                    key={opt.label}
+                    type="button"
+                    onClick={() => handleReminderSelect(opt.value)}
+                    className="flex w-full items-center justify-between rounded-[6px] px-2 py-1 text-[11px] font-medium text-white/80 hover:bg-white/15 hover:text-white transition-colors"
+                  >
+                    <span>{opt.label}</span>
+                    {task.reminder === opt.value && opt.value !== null && (
+                      <span className="text-[10px] font-bold text-emerald-400">✓</span>
+                    )}
+                  </button>
+                ))
+              )}
             </motion.div>
           )}
         </AnimatePresence>

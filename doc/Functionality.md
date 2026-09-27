@@ -42,7 +42,7 @@ Shown when the notch opens. Room for real controls.
 - [x] **Screenshot catcher**: every capture Windows saves opens the closed notch on it for a few seconds, with a shutter flash: drag it anywhere, Keep it on the Shelf, Open it, or Discard it (to the Recycle Bin). A setting.
 - [x] **Focus done**: when a session ends, the notch opens on its own card: the bot says "Done!" in a speech bubble, with how long you went and Again / Done.
 - [x] **Apps bar**: a tray of apps, one tap to open: Windows' most used (by time in focus, top 12) or any number of favourites picked from every installed app. Four in view under the notch, two beside it; the rest scroll. Position: Auto, Left, Bottom or Right, never the same side as the tabs dock (Auto puts it on the right when the dock is below, else under the notch). On the views chosen in Settings (the Shelf by default).
-- [~] **Calendar**: the date leads the time card. No events source yet.
+- [x] **Calendar**: the date leads the time card. Interactive calendar popover allows selecting dates, filtering tasks, and viewing to-do and completed stats.
 - [ ] **Volume slider**
 - [ ] **Stopwatch**
 - [ ] **Clipboard history**
@@ -68,11 +68,10 @@ All of these are settings, not hardcoded behaviour.
 - [x] **Album tint** — the shell picks up colour from the current artwork.
 
 - [x] **Auto-expand on event**: opens by itself on a finished focus session and on a new screenshot, then folds away (hovering keeps it; using it closes it).
-- [ ] **Multi-monitor support** — the notch is pinned to the primary display
-  and does not follow a change of monitor.
+- [x] **Multi-monitor support** — support for individual displays (Display 1, Display 2) as well as rendering simultaneously on Both monitors.
 - [x] **Startup on boot** — registers with Windows via `setLoginItemSettings`.
-- [ ] **Hide on fullscreen** — stays out of the way during video and games.
-- [ ] **Tray icon + quit** — the app is frameless, so this is the only way out.
+- [x] **Hide on fullscreen** — stays out of the way during video and games via Win32 watcher.
+- [x] **Tray icon + quit** — system tray icon with context menu options (Show deskNotch, Settings, Quit deskNotch).
 - [x] **Settings panel**: laid out like System Settings: a sidebar of sections (Glance, Companion, Closed notch, Apps, Tabs & dock, Appearance, General), one section at a time as grouped rows, each with a one-line explanation and one control. A side taken by the dock or the apps bar is greyed out for the other.
 - [ ] **Keyboard shortcut to open** — the notch is hover-only otherwise, so there
   is no way to reach it without the mouse.

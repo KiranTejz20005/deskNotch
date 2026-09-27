@@ -10,8 +10,8 @@
   "type": "module",
   "main": "app/main.js",
   "scripts": {
-    "dev": "nextron --startup-delay 2000",
-    "dev:norestart": "set NEXTRON_NO_RESTART=1 && nextron --startup-delay 2000",
+    "dev": "nextron --startup-delay 5000",
+    "dev:norestart": "set NEXTRON_NO_RESTART=1 && nextron --startup-delay 5000",
     "build": "nextron build",
     "clean:port": "npx --yes kill-port 8888",
     "postinstall": "electron-builder install-app-deps"

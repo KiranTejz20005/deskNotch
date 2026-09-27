@@ -87,12 +87,12 @@ export const SystemGlance: React.FC = () => {
 
   return (
     <div className="flex flex-col gap-2.5 w-full min-w-0">
-      {battery.supported && (
+      {battery && (
         <Meter
           label="BATTERY"
-          value={battery.level}
-          color={batteryColor(battery.level, battery.charging)}
-          readout={`${Math.round(battery.level * 100)}%${battery.charging ? ' ⚡' : ''}`}
+          value={battery.level / 100}
+          color={batteryColor(battery.level / 100, battery.charging)}
+          readout={`${battery.level}%${battery.charging ? ' ⚡' : ''}`}
         />
       )}
 

@@ -9,6 +9,14 @@ import { registerFilesIpc } from './files'
 import { registerPrivacyIpc } from './privacy'
 import { registerAppsIpc } from './apps'
 import { registerDisplayIpc } from './display'
+import { registerBluetoothIpc } from './bluetooth'
+import { registerBatteryIpc } from './battery'
+import { registerVolumeIpc } from './volume'
+import { registerClipboardIpc } from './clipboard'
+import { setupDndIpc } from './dnd'
+import { setupNotificationsIpc } from './notifications'
+import { setupThermalsIpc } from './thermals'
+import { registerShortcutIpc } from './shortcut'
 
 export function registerIpc() {
   registerStoreIpc()
@@ -21,4 +29,12 @@ export function registerIpc() {
   registerPrivacyIpc()
   registerAppsIpc()
   registerDisplayIpc()
+  registerBluetoothIpc()
+  registerBatteryIpc()
+  registerVolumeIpc()
+  registerClipboardIpc()
+  setupDndIpc()
+  setupNotificationsIpc()
+  setupThermalsIpc()
+  registerShortcutIpc()
 }

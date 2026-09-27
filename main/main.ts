@@ -7,9 +7,10 @@ import { stopMediaIpc } from './ipc/media'
 import { stopPrivacyIpc } from './ipc/privacy'
 import { startScreenshotWatch, stopScreenshotWatch } from './ipc/screenshots'
 import { readStore } from './store'
-import { resolveTargetDisplay, setMainWindowForDisplay, setupDisplayListeners } from './display'
+import { getAllActiveWindows, resolveTargetDisplay, setMainWindowForDisplay, setupDisplayListeners, updateNotchWindowPosition } from './display'
 import { startFullscreenWatch, stopFullscreenWatch } from './fullscreen'
 import { createTray, destroyTray, showDeskNotch } from './tray'
+import { registerGlobalShortcut, unregisterAllShortcuts, DEFAULT_SHORTCUT } from './ipc/shortcut'
 
 const gotTheLock = app.requestSingleInstanceLock()
 if (!gotTheLock) {
@@ -46,8 +47,8 @@ app.whenReady().then(async () => {
     transparent: true,
     hasShadow: false,
     frame: false,
-    resizable: false,
-    movable: false,
+    resizable: true,
+    movable: true,
     fullscreenable: false,
     skipTaskbar: true,
     // A tool window: Windows never lists these on the taskbar or in Alt+Tab,
@@ -61,65 +62,61 @@ app.whenReady().then(async () => {
 
   mainWindow.setAlwaysOnTop(true, 'screen-saver')
   mainWindow.setVisibleOnAllWorkspaces(true)
-
   mainWindow.setIgnoreMouseEvents(true, { forward: true })
 
-
-  // The strip spans the whole screen width, so it must never take clicks for
-  // anything but the notch itself. The renderer reports the notch's bounds and
-  // the cursor is polled against them: setIgnoreMouseEvents(false) would hand
-  // the entire strip clicks, swallowing anything the user aimed at underneath.
-  // The notch, and the rail beside it while open: every rectangle that takes clicks.
   type Rect = { x: number; y: number; width: number; height: number }
-  let notchBounds: Rect[] = []
-  let interactive = false
-  let lastCursor = ''
+  const windowBoundsMap = new Map<number, Rect[]>()
+  const windowInteractiveMap = new Map<number, boolean>()
+  const windowCursorMap = new Map<number, string>()
 
   const applyCursorHitTest = () => {
-    if (mainWindow.isDestroyed() || !mainWindow.isVisible()) return
-
     const { x, y } = screen.getCursorScreenPoint()
-    const windowBounds = mainWindow.getBounds()
+    const activeWins = getAllActiveWindows()
 
-    const inside = notchBounds.some(
-      (r) =>
-        x >= windowBounds.x + r.x &&
-        x <= windowBounds.x + r.x + r.width &&
-        y >= windowBounds.y + r.y &&
-        y <= windowBounds.y + r.y + r.height,
-    )
+    for (const win of activeWins) {
+      if (win.isDestroyed() || !win.isVisible()) continue
 
-    // Where the pointer is, relative to the strip, whenever it moves: the
-    // notch decides whether a pointer that left it has really gone. DOM events
-    // cannot tell it, since the window stops taking the mouse past the edge.
-    const at = `${x - windowBounds.x},${y - windowBounds.y}`
-    if (at !== lastCursor) {
-      lastCursor = at
-      mainWindow.webContents.send('notch:cursor', { x: x - windowBounds.x, y: y - windowBounds.y })
+      const windowBounds = win.getBounds()
+      const notchBounds = windowBoundsMap.get(win.id) || []
+
+      const inside = notchBounds.some(
+        (r) =>
+          x >= windowBounds.x + r.x &&
+          x <= windowBounds.x + r.x + r.width &&
+          y >= windowBounds.y + r.y &&
+          y <= windowBounds.y + r.y + r.height,
+      )
+
+      const at = `${x - windowBounds.x},${y - windowBounds.y}`
+      if (at !== windowCursorMap.get(win.id)) {
+        windowCursorMap.set(win.id, at)
+        win.webContents.send('notch:cursor', { x: x - windowBounds.x, y: y - windowBounds.y })
+      }
+
+      const interactive = windowInteractiveMap.get(win.id) ?? false
+      if (inside !== interactive) {
+        windowInteractiveMap.set(win.id, inside)
+        win.setIgnoreMouseEvents(!inside, { forward: true })
+      }
     }
-
-    if (inside === interactive) return
-    interactive = inside
-    mainWindow.setIgnoreMouseEvents(!inside, { forward: true })
   }
 
-  // 60ms is under the threshold where a click feels like it missed, and cheap
-  // enough to leave running.
-  const hitTestTimer = setInterval(applyCursorHitTest, 60)
-  mainWindow.on('closed', () => clearInterval(hitTestTimer))
+  setInterval(applyCursorHitTest, 60)
 
-  ipcMain.on('notch:bounds', (_event, bounds: Rect[] | Rect) => {
-    notchBounds = Array.isArray(bounds) ? bounds : [bounds]
+  ipcMain.on('notch:bounds', (event, bounds: Rect[] | Rect) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (win) {
+      windowBoundsMap.set(win.id, Array.isArray(bounds) ? bounds : [bounds])
+    }
   })
 
-  // Only take keyboard focus when the notch is pinned open, so merely hovering
-  // it does not steal focus from whatever the user was typing in.
-  ipcMain.on('notch:pinned', (_event, isPinned: boolean) => {
-    if (mainWindow.isDestroyed()) return
-    if (isPinned) mainWindow.focus()
-    else mainWindow.blur()
-    // Focus can put a window back on the taskbar; keep it off.
-    mainWindow.setSkipTaskbar(true)
+  ipcMain.on('notch:pinned', (event, isPinned: boolean) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (win && !win.isDestroyed()) {
+      if (isPinned) win.focus()
+      else win.blur()
+      win.setSkipTaskbar(true)
+    }
   })
 
   ipcMain.on('notch:playback_session', (_event, session: any) => {
@@ -140,14 +137,19 @@ app.whenReady().then(async () => {
 
   registerIpc()
   setMainWindowForDisplay(mainWindow)
+  updateNotchWindowPosition(STRIP_HEIGHT)
   setupDisplayListeners(STRIP_HEIGHT)
   startSmtc(mainWindow)
   startScreenshotWatch()
   startFullscreenWatch(mainWindow)
   createTray(mainWindow)
+
+  const savedShortcut = (initialSettings.keyboardShortcut as string) || DEFAULT_SHORTCUT
+  registerGlobalShortcut(savedShortcut)
 })
 
 const cleanupAndQuit = () => {
+  unregisterAllShortcuts()
   destroyTray()
   stopSmtc()
   stopMediaIpc()
