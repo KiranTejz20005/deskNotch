@@ -9,6 +9,16 @@ import { startScreenshotWatch, stopScreenshotWatch } from './ipc/screenshots'
 import { readStore } from './store'
 import { resolveTargetDisplay, setMainWindowForDisplay, setupDisplayListeners } from './display'
 import { startFullscreenWatch, stopFullscreenWatch } from './fullscreen'
+import { createTray, destroyTray, showDeskNotch } from './tray'
+
+const gotTheLock = app.requestSingleInstanceLock()
+if (!gotTheLock) {
+  app.quit()
+} else {
+  app.on('second-instance', () => {
+    showDeskNotch()
+  })
+}
 
 const isProd = process.env.NODE_ENV === 'production'
 
@@ -129,13 +139,23 @@ app.whenReady().then(async () => {
   startSmtc(mainWindow)
   startScreenshotWatch()
   startFullscreenWatch(mainWindow)
+  createTray(mainWindow)
 })
 
-app.on('window-all-closed', () => {
+const cleanupAndQuit = () => {
+  destroyTray()
   stopSmtc()
   stopMediaIpc()
   stopPrivacyIpc()
   stopScreenshotWatch()
   stopFullscreenWatch()
+}
+
+app.on('window-all-closed', () => {
+  cleanupAndQuit()
   app.quit()
+})
+
+app.on('will-quit', () => {
+  cleanupAndQuit()
 })

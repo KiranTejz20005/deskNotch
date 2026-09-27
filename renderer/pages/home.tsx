@@ -151,6 +151,15 @@ export default function HomePage() {
       }),
     [],
   )
+
+  useEffect(() => {
+    const unsub = window.bridge?.on<string>('notch:navigate', (targetView) => {
+      if (typeof targetView === 'string') {
+        setView(targetView)
+      }
+    })
+    return () => unsub?.()
+  }, [])
   const openChanged = (open: boolean) => {
     notchOpen.current = open
     // Folded away: the moment is over; the notch is itself again next time.

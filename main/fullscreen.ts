@@ -205,6 +205,26 @@ function hideWindow() {
   mainWindowRef.hide()
 }
 
+export function isCurrentFullscreenMatch(): boolean {
+  const store = readStore()
+  const settings = (store.settings ?? {}) as Record<string, unknown>
+  const hideOnFullscreen = settings.hideOnFullscreen !== false
+  if (!hideOnFullscreen || lastRawResult === 'false') return false
+
+  const parts = lastRawResult.split(',').map(Number)
+  if (parts.length === 4 && !parts.some(isNaN)) {
+    const [fsLeft, fsTop, fsRight, fsBottom] = parts
+    const selectedDisplayId = (settings.selectedDisplayId as string) || 'primary'
+    const targetDisplay = resolveTargetDisplay(selectedDisplayId)
+    const targetLeft = targetDisplay.bounds.x
+    const targetTop = targetDisplay.bounds.y
+    const targetRight = targetDisplay.bounds.x + targetDisplay.bounds.width
+    const targetBottom = targetDisplay.bounds.y + targetDisplay.bounds.height
+    return fsLeft < targetRight && fsRight > targetLeft && fsTop < targetBottom && fsBottom > targetTop
+  }
+  return false
+}
+
 function restoreWindow() {
   if (!mainWindowRef || mainWindowRef.isDestroyed()) return
   isHiddenByFullscreen = false
