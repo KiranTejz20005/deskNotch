@@ -445,22 +445,9 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onChange
   const count = cardCount(settings, aiCards)
   /** Whether switching this on still fits the glance. */
   const fits = (key: keyof Settings) => cardCount({ ...settings, [key]: true }, aiCards) <= MAX_CARDS
-  const card = (
-    key:
-      | 'showMusic'
-      | 'showTasks'
-      | 'showAvatar'
-      | 'showAiUsage'
-      | 'showStatus'
-      | 'showVolume'
-      | 'showStopwatch'
-      | 'showClipboard'
-      | 'showWeather'
-      | 'showDnd'
-      | 'showNotifications'
-      | 'showThermals',
-    label: string,
-  ) => <Switch label={label} on={settings[key]} disabled={!settings[key] && !fits(key)} onChange={(v) => set(key, v)} />
+  const card = (key: 'showMusic' | 'showTasks' | 'showAvatar' | 'showAiUsage' | 'showStatus', label: string) => (
+    <Switch label={label} on={settings[key]} disabled={!settings[key] && !fits(key)} onChange={(v) => set(key, v)} />
+  )
 
   const hiddenViews = settings.hiddenViews ?? []
 
@@ -481,16 +468,16 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onChange
             {card('showStatus', 'Right now')}
           </Row>
           <Row title="Weather" detail="Current temperature & 4-day forecast">
-            {card('showWeather', 'Weather')}
+            <Switch label="Weather" on={settings.showWeather} onChange={(v) => set('showWeather', v)} />
           </Row>
           <Row title="Focus Mode (DND)" detail="Windows Do Not Disturb toggle">
-            {card('showDnd', 'Focus Mode')}
+            <Switch label="Focus Mode" on={settings.showDnd} onChange={(v) => set('showDnd', v)} />
           </Row>
           <Row title="Notification Peek" detail="Windows system notifications stream">
-            {card('showNotifications', 'Notification Peek')}
+            <Switch label="Notification Peek" on={settings.showNotifications} onChange={(v) => set('showNotifications', v)} />
           </Row>
           <Row title="Laptop Thermals" detail="CPU & System temperature hardware monitor">
-            {card('showThermals', 'Laptop Thermals')}
+            <Switch label="Laptop Thermals" on={settings.showThermals} onChange={(v) => set('showThermals', v)} />
           </Row>
           <Row
             title="AI usage"
