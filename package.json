@@ -14,7 +14,7 @@
     "dev:norestart": "node scripts/patch-nextron.cjs && set NEXTRON_NO_RESTART=1 && nextron --startup-delay 20000",
     "build": "nextron build",
     "clean:port": "npx --yes kill-port 8888",
-    "postinstall": "electron-builder install-app-deps && node scripts/patch-nextron.cjs"
+    "postinstall": "electron-builder install-app-deps"
   },
   "dependencies": {
     "@coooookies/windows-smtc-monitor": "^1.0.12",

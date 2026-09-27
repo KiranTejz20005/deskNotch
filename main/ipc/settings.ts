@@ -2,8 +2,11 @@
 import { app, ipcMain } from 'electron'
 
 export function registerSettingsIpc() {
-  ipcMain.handle('settings:start-on-boot', (_event, enabled: boolean) => {
-    app.setLoginItemSettings({ openAtLogin: enabled })
+  ipcMain.handle('settings:start-on-boot', (_event, enabled?: unknown) => {
+    if (typeof enabled === 'boolean') {
+      app.setLoginItemSettings({ openAtLogin: enabled })
+    }
     return app.getLoginItemSettings().openAtLogin
   })
 }
+

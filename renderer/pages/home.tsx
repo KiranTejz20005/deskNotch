@@ -271,22 +271,34 @@ export default function HomePage() {
   useEffect(() => {
     window.bridge
       ?.invoke<Partial<Settings>>('store:get', 'settings')
-      .then((stored) =>
-        setSettings({
+      .then(async (stored) => {
+        const loadedSettings: Settings = {
           ...DEFAULT_SETTINGS,
           ...stored,
           // Translucent became Glass, now a real blur.
-          notchStyle: (stored.notchStyle as string) === 'translucent' ? 'glass' : (stored.notchStyle ?? DEFAULT_SETTINGS.notchStyle),
+          notchStyle: (stored?.notchStyle as string) === 'translucent' ? 'glass' : (stored?.notchStyle ?? DEFAULT_SETTINGS.notchStyle),
           // Focus lives in the companion now; the glance card is retired.
           showFocus: false,
           // Older settings kept a list of topics under another name; the first
           // one becomes the mode.
           companionMode:
-            stored.companionMode ??
-            ((Array.isArray((stored as any).companionSays) && (stored as any).companionSays[0]) as CompanionMode | undefined) ??
+            stored?.companionMode ??
+            ((Array.isArray((stored as any)?.companionSays) && (stored as any)?.companionSays[0]) as CompanionMode | undefined) ??
             DEFAULT_SETTINGS.companionMode,
-        }),
-      )
+        }
+
+        try {
+          const actualStartOnBoot = await window.bridge?.invoke<boolean>(
+            'settings:start-on-boot',
+            stored?.startOnBoot ?? DEFAULT_SETTINGS.startOnBoot,
+          )
+          if (typeof actualStartOnBoot === 'boolean') {
+            loadedSettings.startOnBoot = actualStartOnBoot
+          }
+        } catch {}
+
+        setSettings(loadedSettings)
+      })
       .catch(() => setSettings(DEFAULT_SETTINGS))
       .finally(() => {
         settingsLoaded.current = true
@@ -296,8 +308,7 @@ export default function HomePage() {
   useEffect(() => {
     if (!settingsLoaded.current) return
     void window.bridge?.invoke('store:set', 'settings', settings)
-    // Start with Windows is switched off for now (Settings shows it as coming soon).
-    void window.bridge?.invoke('settings:start-on-boot', false)
+    void window.bridge?.invoke('settings:start-on-boot', settings.startOnBoot)
   }, [settings])
 
   catchScreenshots.current = settings.catchScreenshots ?? true
