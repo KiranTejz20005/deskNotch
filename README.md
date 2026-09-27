@@ -15,11 +15,12 @@ deskNotch sits at the top centre of your screen as a slim bar. Hover it, and it 
 - **Focus countdown**: a tiny ring and the time left while a session runs.
 - **Clock**: 12-hour time whenever nothing else needs the space.
 - **AI usage**: your Claude and Codex limits as two small rings, 5-hour inside and weekly outside.
-- **Privacy dots**: orange while any app uses the microphone, green for the camera.
-- **Just connected**: headphones, Wi-Fi and Bluetooth devices get a brief moment of their own when they connect.
+- **Privacy dots**: orange while any app uses the microphone, green for the camera, and the app's name for a moment when it starts.
+- **Just connected**: headphones, Wi-Fi and Bluetooth devices get a brief moment of their own when they connect, with the battery level for earbuds and mice that report one.
+- **Battery**: a moment when you plug in or unplug, a warning at 20% and 10%, and the charge kept in view while it is low.
 
 ### Three views, one hover away
-- **Glance**: up to four cards: your companion, now playing with controls, your next tasks, and AI usage.
+- **Glance**: up to four cards: your companion, now playing with controls, your next tasks, and AI usage, plus a **Right now** card whenever an app is on your mic or camera or the battery has something to say; flip it over for CPU, GPU and memory usage as three rings.
 - **Desk**: a focus timer beside your whole task list.
 - **Shelf**: drop files anywhere on the notch to park them, with thumbnails; drag them back out one at a time, or all at once.
 

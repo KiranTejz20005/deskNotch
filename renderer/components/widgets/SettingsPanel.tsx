@@ -28,6 +28,8 @@ export interface Settings {
   showAvatar: boolean
   showFocus: boolean
   showAiUsage: boolean
+  /** The Right now card: apps on the mic or camera, and the battery, while there are any. */
+  showStatus: boolean
   ambientVideo: boolean
   albumTint: boolean
   startOnBoot: boolean
@@ -66,6 +68,7 @@ export const DEFAULT_SETTINGS: Settings = {
   showAvatar: true,
   showFocus: false,
   showAiUsage: true,
+  showStatus: true,
   ambientVideo: true,
   albumTint: true,
   startOnBoot: false,
@@ -254,7 +257,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onChange
   const count = cardCount(settings, aiCards)
   /** Whether switching this on still fits the glance. */
   const fits = (key: keyof Settings) => cardCount({ ...settings, [key]: true }, aiCards) <= MAX_CARDS
-  const card = (key: 'showMusic' | 'showTasks' | 'showAvatar' | 'showAiUsage', label: string) => (
+  const card = (key: 'showMusic' | 'showTasks' | 'showAvatar' | 'showAiUsage' | 'showStatus', label: string) => (
     <Switch label={label} on={settings[key]} disabled={!settings[key] && !fits(key)} onChange={(v) => set(key, v)} />
   )
   const hiddenViews = settings.hiddenViews ?? []
@@ -271,6 +274,9 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onChange
           </Row>
           <Row title="Next task" detail="Your next few tasks, tickable">
             {card('showTasks', 'Next task')}
+          </Row>
+          <Row title="Right now" detail="Which apps are on your mic or camera, and the battery. Only while there is something to say; not one of the four">
+            {card('showStatus', 'Right now')}
           </Row>
           <Row
             title="AI usage"

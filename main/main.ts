@@ -5,6 +5,7 @@ import { startSmtc, stopSmtc } from './smtc'
 import { registerIpc } from './ipc'
 import { stopMediaIpc } from './ipc/media'
 import { stopPrivacyIpc } from './ipc/privacy'
+import { stopUsageIpc } from './ipc/usage'
 import { startScreenshotWatch, stopScreenshotWatch } from './ipc/screenshots'
 
 const isProd = process.env.NODE_ENV === 'production'
@@ -127,6 +128,7 @@ app.on('window-all-closed', () => {
   stopSmtc()
   stopMediaIpc()
   stopPrivacyIpc()
+  stopUsageIpc()
   stopScreenshotWatch()
   app.quit()
 })

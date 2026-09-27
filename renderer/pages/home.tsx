@@ -18,6 +18,7 @@ import { botAvatarPalette } from 'bot-avatars'
 import { CompanionTile, COMPANION_WIDTH, COMPANION_OPEN_WIDTH, COMPANION_TIME_WIDTH, type CompanionMode } from '../components/widgets/CompanionTile'
 import { MediaTile, TimeTile, TaskTile, MEDIA_WIDTH, TIME_WIDTH, TASK_WIDTH } from '../components/widgets/GlanceTiles'
 import { FocusTile, FOCUS_WIDTH } from '../components/widgets/FocusTile'
+import { StatusTile, STATUS_WIDTH, statusShown, type StatusPage } from '../components/widgets/StatusTile'
 import { AiOrbs, providerWidth, visibleLimits } from '../components/widgets/AiOrbs'
 import { AloneContext, TILE, TILE_GAP } from '../components/ui/tile'
 import { MAX_CARDS } from '../lib/glance'
@@ -30,6 +31,7 @@ import { useTasks } from '../hooks/useTasks'
 import { useAiLimits } from '../hooks/useAiLimits'
 import { usePrivacy } from '../hooks/usePrivacy'
 import { useHeadphones } from '../hooks/useHeadphones'
+import { useBattery } from '../hooks/useBattery'
 
 /** The places to go, as circles on the dock. Settings is a control, not a
  *  place, so it sits after them with the lock. */
@@ -49,6 +51,20 @@ const SIZES: Record<string, { width: number; height: number }> = {
 const PADDING = PAD
 /** The bar, a clear step, the cards, and room below them. */
 const GLANCE_HEIGHT = CHROME_Y + TILE
+
+/** The battery levels that each get a warning on the way down, lowest first. */
+const LOW_STEPS = [0.1, 0.2]
+
+/** Calls `announce` with a name newly in `names` since the last change. */
+function useArrivals(names: string[], announce: (name: string) => void) {
+  const key = names.join(';')
+  const last = useRef<string[]>([])
+  useEffect(() => {
+    const arrived = names.find((name) => !last.current.includes(name))
+    if (arrived) announce(arrived)
+    last.current = names
+  }, [key])
+}
 
 export default function HomePage() {
   const nowPlaying = useNowPlaying()
@@ -116,6 +132,8 @@ export default function HomePage() {
     }
   }, [])
   const [hubOpen, setHubOpen] = useState(false)
+  /** Which face the Right now card shows; on Usage it stays even with nothing happening. */
+  const [statusPage, setStatusPage] = useState<StatusPage>('now')
 
   // Moments: something happens while the notch is closed (a screenshot, a
   // focus session ending), so it opens on it by itself for a few seconds,
@@ -195,14 +213,48 @@ export default function HomePage() {
     if (warm.current && wifiName && wifiName !== lastWifi.current) show({ kind: 'wifi', name: wifiName })
     lastWifi.current = wifiName
   }, [wifiName])
-  const btKey = privacy.bluetooth.join(';')
-  const lastBt = useRef<string[]>([])
+  useArrivals(
+    privacy.bluetooth.map((device) => device.name),
+    (name) => {
+      const charge = privacy.bluetooth.find((device) => device.name === name)?.battery
+      // Headphones already had their moment a moment ago: one is enough,
+      // unless this one brings the charge, which that one could not know.
+      const said = Date.now() - lastHeadphones.current < 30000
+      if (!warm.current || (said && charge == null)) return
+      show({ kind: 'bluetooth', name, detail: charge == null ? undefined : `Connected · ${charge}%` })
+    },
+  )
+
+  // An app taking the microphone or camera: its name, in the dot's colour.
+  // Whatever was already in use when the app started is not news either.
+  useArrivals(privacy.micApps, (name) => warm.current && show({ kind: 'mic', name, detail: 'Microphone' }))
+  useArrivals(privacy.cameraApps, (name) => warm.current && show({ kind: 'camera', name, detail: 'Camera' }))
+
+  // The battery: unplugging and plugging in each get a moment with the charge,
+  // and running low gets one at each step down. A desktop never changes state,
+  // so it never says anything; the state at start is not news.
+  const battery = useBattery()
+  const lastCharging = useRef<boolean | null>(null)
   useEffect(() => {
-    const arrived = privacy.bluetooth.find((name) => !lastBt.current.includes(name))
-    // Headphones already had their moment a moment ago: one is enough.
-    if (warm.current && arrived && Date.now() - lastHeadphones.current > 30000) show({ kind: 'bluetooth', name: arrived })
-    lastBt.current = privacy.bluetooth
-  }, [btKey])
+    if (!battery.supported) return
+    const charge = `${Math.round(battery.level * 100)}%`
+    if (lastCharging.current !== null && battery.charging !== lastCharging.current)
+      show(battery.charging ? { kind: 'charging', name: 'Charging', detail: charge } : { kind: 'battery', name: 'On battery', detail: charge })
+    lastCharging.current = battery.charging
+  }, [battery.supported, battery.charging])
+  /** The lowest step already warned about; charging starts over. */
+  const warnedAt = useRef(1)
+  useEffect(() => {
+    if (!battery.supported) return
+    if (battery.charging) {
+      warnedAt.current = 1
+      return
+    }
+    const step = LOW_STEPS.find((level) => battery.level <= level && warnedAt.current > level)
+    if (step === undefined) return
+    warnedAt.current = step
+    show({ kind: 'battery', name: 'Battery low', detail: `${Math.round(battery.level * 100)}%` })
+  }, [battery.supported, battery.charging, battery.level])
 
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS)
   const settingsLoaded = useRef(false)
@@ -292,6 +344,7 @@ export default function HomePage() {
   // nothing else at all, not even an AI reading.
   const showTaskCard = settings.showTasks && !settings.showFocus
   const showTime = !showCompanion && !media && !showTaskCard && !settings.showFocus && shownLimits.length === 0
+  const showStatus = settings.showStatus && (statusShown(privacy, battery) || statusPage === 'usage')
 
   // Every card, in order, with its width — the notch is exactly as wide as
   // they need. Past MAX_CARDS the AI cards, which come last, are the ones left off.
@@ -308,6 +361,8 @@ export default function HomePage() {
     showTime && TIME_WIDTH,
     showTaskCard && TASK_WIDTH,
     settings.showFocus && FOCUS_WIDTH,
+    // The bar's edge readings, while the notch is open: only when there are any.
+    showStatus && STATUS_WIDTH,
   ].filter((w): w is number => typeof w === 'number')
   const aiShown = shownLimits.slice(0, Math.max(0, MAX_CARDS - fixed.length))
   const widths = [...fixed, ...aiShown.map(providerWidth)]
@@ -420,6 +475,7 @@ export default function HomePage() {
                       {settings.showFocus && (
                         <FocusTile timer={timer} tasks={settings.showTasks ? tasks : undefined} minutes={settings.focusMinutes ?? 25} />
                       )}
+                      {showStatus && <StatusTile privacy={privacy} battery={battery} accent={accent} page={statusPage} onPage={setStatusPage} />}
                       <AiOrbs providers={aiShown} tint={orbTint} />
                     </div>
                     </AloneContext.Provider>
@@ -479,6 +535,7 @@ export default function HomePage() {
                   right={settings.collapsedRight ?? 'time'}
                   limits={companionLimits}
                   privacy={privacy}
+                  battery={battery}
                   moment={moment}
                 />
               )

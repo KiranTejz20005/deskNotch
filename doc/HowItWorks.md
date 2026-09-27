@@ -159,6 +159,7 @@ The rule it follows: **nothing slow or blocking runs on main's event loop**, bec
 | Glass style | only while Glass is on | one 15 fps screen capture shared by every surface, then a CSS blur; stops when you switch style | [Backdrop.tsx](renderer/components/notch/Backdrop.tsx) |
 | AI limits | every 2 min while shown, min gap 60 s | one HTTPS call per provider; 5 min back-off after a failure | [limits.ts](main/ipc/limits.ts) |
 | Most used apps | once per 30 min | `reg query` + one PowerShell with a C# icon helper, ~2 to 4 s cold, then cached | [apps.ts](main/ipc/apps.ts) |
+| Usage page | every 2 s, only while the card is flipped to it | `os.cpus()` on request; one long-lived PowerShell reading the GPU perf counter (~1 s a sample, ~3 s the first time), killed 6 s after the last ask | [usage.ts](main/ipc/usage.ts) |
 
 ### Security model
 
@@ -470,7 +471,7 @@ flowchart TD
 
 ## 6. Status watcher: privacy dots, Wi-Fi, Bluetooth
 
-> **In plain words:** One small PowerShell script runs in the background and keeps asking Windows three questions: is any app using the mic or camera, which Wi-Fi am I on, and which Bluetooth devices are connected. It only speaks up when an answer changes.
+> **In plain words:** One small PowerShell script runs in the background and keeps asking Windows three questions: which apps are using the mic or camera, which Wi-Fi am I on, and which Bluetooth devices are connected (and how charged they are). It only speaks up when an answer changes.
 
 One PowerShell, kept alive, answers three questions and prints a line only when an answer changes.
 
@@ -478,15 +479,16 @@ One PowerShell, kept alive, answers three questions and prints a line only when 
 
 ```
 HKCU\Software\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\
-    microphone\<app>\  LastUsedTimeStart, LastUsedTimeStop
-    webcam\<app>\      LastUsedTimeStart, LastUsedTimeStop
+    microphone\<app>\              LastUsedTimeStart, LastUsedTimeStop
+    microphone\NonPackaged\<app>\  (the same, for classic exes)
+    webcam\…                       likewise
 ```
 
-A `LastUsedTimeStop` of **0** (with a start time set) means "still using it right now".
+A `LastUsedTimeStop` of **0** (with a start time set) means "still using it right now". The key's name is the app: a package family like `Microsoft.WindowsCamera_8wekyb3d8bbwe` for Store apps, or the exe's path with `#` for `\` (`C:#Program Files#Zoom#bin#Zoom.exe`) under `NonPackaged`. Main looks each up in the Start menu's list (§8: a Store app's id is its family plus `!App`, a classic app's is often its exe path) for the name Windows shows ("WhatsApp", "Camera"), and for anything not listed reads a name off the key itself ("Zoom" from `Zoom.exe`), in [privacy.ts](main/ipc/privacy.ts).
 
 **Wi-Fi.** `netsh wlan show interfaces`: its State, SSID and Signal lines.
 
-**Bluetooth.** `Get-PnpDevice -Class Bluetooth`, keeping real devices (not the radio, adapters or profiles), then each one's "is connected" device property (`{83DA6326-97A6-4088-9453-A1923F573B29} 15`). Asking every device takes a second or two, so this runs least often.
+**Bluetooth.** `Get-PnpDevice -Class Bluetooth`, keeping real devices (not the radio, adapters or profiles), then each one's "is connected" device property (`{83DA6326-97A6-4088-9453-A1923F573B29} 15`), and, for the connected ones, the battery property (`{104EA319-6EE2-4701-BD47-8DDBF425BBE5} 2`), which headsets, mice and pens report and most other devices leave empty. Asking every device takes a second or two, so this runs least often.
 
 ```mermaid
 sequenceDiagram
@@ -498,27 +500,27 @@ sequenceDiagram
     R->>M: invoke('privacy:get') (first ask starts the watcher)
     M->>P: spawn, with our process id
     loop every 1.5 s
-        P->>W: ConsentStore: any mic / webcam app with Stop = 0?
+        P->>W: ConsentStore: which mic / webcam apps have Stop = 0?
         P->>W: every ~10 s: netsh wlan show interfaces
-        P->>W: every ~30 s: connected Bluetooth devices
-        P-->>M: "mic,camera TAB ssid|signal TAB device;device" (only when it changed)
-        M-->>R: send('privacy:state', { mic, camera, wifi, bluetooth })
+        P->>W: every ~30 s: connected Bluetooth devices, and their battery
+        P-->>M: "micApps TAB camApps TAB ssid|signal TAB device|80;device|" (only when it changed)
+        M-->>R: send('privacy:state', { mic, camera, micApps, cameraApps, wifi, bluetooth })
     end
     Note over P: exits by itself if our process is gone
 ```
 
 What the closed bar does with it:
 
-- **Privacy dots**, all the time: orange while the microphone is in use, green for the camera, as on the iPhone.
-- **Wi-Fi and Bluetooth** are not shown all the time. They get a moment (§7) only when something **connects**: a new network, or a Bluetooth device that was not connected before.
+- **Privacy dots**, all the time: orange while the microphone is in use, green for the camera, as on the iPhone. When an app **starts** using one, it gets a moment (§7) in that colour: "Zoom · Microphone".
+- **Wi-Fi and Bluetooth** are not shown all the time. They get a moment (§7) only when something **connects**: a new network, or a Bluetooth device that was not connected before. A device that reports its charge says so: "Buds · Connected · 80%".
 
 Code: [privacy.ts](main/ipc/privacy.ts) (script and watcher), [usePrivacy.ts](renderer/hooks/usePrivacy.ts).
 
-## 7. "Just connected" moments (headphones, Wi-Fi, Bluetooth)
+## 7. Moments (headphones, Wi-Fi, Bluetooth, mic and camera, battery)
 
-> **In plain words:** When something connects, the closed notch shows it for a second and a half, like AirPods on an iPhone. Headphones are noticed by the browser itself; Wi-Fi and Bluetooth come from the watcher in §6.
+> **In plain words:** When something happens, the closed notch shows it for a second and a half, like AirPods on an iPhone. Headphones and the battery are noticed by the browser itself; Wi-Fi, Bluetooth and the mic and camera come from the watcher in §6.
 
-When something connects, the closed bar gives itself to it for about a second and a half: the icon swings in, then the name and "Connected", then it slides away and the usual bar returns.
+When something happens, the closed bar gives itself to it for about a second and a half: the icon swings in, then the name and a word at the right edge ("Connected", "Microphone", "42%"), then it slides away and the usual bar returns.
 
 ```mermaid
 flowchart TD
@@ -529,13 +531,19 @@ flowchart TD
     D["Status watcher (§6)"] --> E{"Wi-Fi network changed<br/>to a connected one?"}
     E -->|yes| W["Moment: Wi-Fi + network name"]
     D --> F{"A Bluetooth device newly connected?"}
-    F -->|"yes, and no headphones moment in the last 30 s"| T["Moment: Bluetooth + device name"]
+    F -->|"yes, and no headphones moment in the last 30 s<br/>(or it brings a battery level)"| T["Moment: Bluetooth + device name + charge"]
+    D --> G{"An app newly using the mic or camera?"}
+    G -->|yes| U["Moment: the app's name, in the dot's colour"]
+    K["Battery Status API<br/>(Chromium, over Windows' power state)"] --> L{"Plugged in or unplugged?<br/>Fell to 20%, then 10%?"}
+    L -->|yes| V["Moment: Charging / On battery / Battery low + charge"]
 ```
 
-- What is already connected when the app starts is not news: Wi-Fi and Bluetooth changes count only after a 12 s warm-up, and devices present at start are remembered.
-- A Bluetooth headset shows as both headphones (instantly, from `devicechange`) and a Bluetooth device (later, from the watcher); the headphones moment wins, so it is not announced twice.
+- What is already connected, in use or plugged in when the app starts is not news: Wi-Fi, Bluetooth, mic and camera changes count only after a 12 s warm-up, and whatever is present at start is remembered. The one exception is a battery already low at start, which is worth saying once.
+- A Bluetooth headset shows as both headphones (instantly, from `devicechange`) and a Bluetooth device (later, from the watcher); the headphones moment wins, so it is not announced twice, unless the later one carries a charge the first could not know.
+- While the battery is at 20% or under and not charging, the bar also keeps the charge in view at its right edge, in red, beside the privacy dots. A desktop PC reports full and charging forever, so it never shows anything.
+- The bar is gone while the notch is open (hovered or locked), so the same readings sit on a **Right now** card in the glance ([StatusTile.tsx](renderer/components/widgets/StatusTile.tsx)): a row per app on the microphone or camera, in the dot's colour, and one for the battery. The card only joins the row while it has something to say, and leaves with the last reading. Its ⇄ flips it to **Usage**: CPU, GPU and memory as three rings, one inside the other, in light, plain and deep shades of the companion's colour, with a legend naming each, read as in the cost table above and only while that face is showing ([usage.ts](main/ipc/usage.ts)). On Usage the card stays put whatever is happening.
 
-Code: [useHeadphones.ts](renderer/hooks/useHeadphones.ts), the moments in [home.tsx](renderer/pages/home.tsx), the view in [CollapsedStatus.tsx](renderer/components/notch/CollapsedStatus.tsx).
+Code: [useHeadphones.ts](renderer/hooks/useHeadphones.ts), [useBattery.ts](renderer/hooks/useBattery.ts), the moments in [home.tsx](renderer/pages/home.tsx), the view in [CollapsedStatus.tsx](renderer/components/notch/CollapsedStatus.tsx).
 
 ## 8. Most used and favourite apps
 
@@ -580,6 +588,7 @@ sequenceDiagram
 | **Glass** style | A live capture of the screen, blurred, on the notch (open or closed), the dock and the apps tray: **one** capture shared by all of them (reference-counted), at 15 fps, while Glass is on. Small surfaces blur less so what is behind stays recognisable. The window is excluded from capture with `setContentProtection(true)` (WDA_EXCLUDEFROMCAPTURE), so the capture shows what is **behind** the notch, not the notch; `desktopCapturer` picks the display's source and the renderer streams it with `getUserMedia` | [system.ts](main/ipc/system.ts), [Backdrop.tsx](renderer/components/notch/Backdrop.tsx) |
 | Glass tint from the wallpaper | Reads `%APPDATA%\Microsoft\Windows\Themes\TranscodedWallpaper`, the copy of the current wallpaper Windows keeps | [system.ts:20](main/ipc/system.ts#L20) |
 | Accent colour | `systemPreferences.getAccentColor()`, the colour set in Personalisation | [system.ts:40](main/ipc/system.ts#L40) |
+| **Usage** (CPU, GPU, memory) | CPU and memory from Node's `os`; GPU from the `GPU Engine` performance counter, via a PowerShell kept alive only while the Usage face is showing. It is the busiest engine type, as Task Manager counts it | [usage.ts](main/ipc/usage.ts) |
 | 12-hour clock | Built from the system time; the closed bar shows it on the left whenever no focus session or music is running | [time.ts](renderer/lib/time.ts) |
 | Start on boot | `app.setLoginItemSettings({ openAtLogin })`, which writes the `HKCU\…\Run` registry entry | [settings.ts:6](main/ipc/settings.ts#L6) |
 | AI limits | Reads the login Claude Code and Codex keep in your user folder, then calls only their own servers | [limits.ts](main/ipc/limits.ts) |
