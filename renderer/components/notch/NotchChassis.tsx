@@ -192,20 +192,23 @@ export const NotchChassis: React.FC<NotchChassisProps> = ({
   }
   const onLeave = () => {
     stopLeaving()
-    let last = Infinity
-    // The real cursor, from the main process, and only when the hand moves:
-    // past the edge the window lets the mouse through, so DOM events stop (or
-    // claim the pointer left), and while the notch resizes the browser sends
-    // moves for a pointer that never moved.
+    const fallbackTimer = setTimeout(() => {
+      stopLeaving()
+      setHover(false)
+    }, 450)
+
     const unsubscribe = window.bridge?.on<{ x: number; y: number }>('notch:cursor', ({ x, y }) => {
       const d = distance(x, y)
-      if (d > LEAVE_MARGIN && d > last) {
+      if (d > LEAVE_MARGIN) {
         stopLeaving()
         setHover(false)
       }
-      last = d
     })
-    leaving.current = () => unsubscribe?.()
+
+    leaving.current = () => {
+      clearTimeout(fallbackTimer)
+      unsubscribe?.()
+    }
   }
 
   // The window is a full-width strip, so the main process cannot simply stop

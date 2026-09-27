@@ -8,8 +8,12 @@ let mainWindowRef: BrowserWindow | null = null
 
 export function getTrayIcon(): NativeImage {
   const candidatePaths = [
+    path.join(process.cwd(), 'resources', 'icon.ico'),
+    path.join(process.cwd(), 'resources', 'icon.png'),
     path.join(process.resourcesPath, 'icon.ico'),
+    path.join(process.resourcesPath, 'icon.png'),
     path.join(app.getAppPath(), 'resources', 'icon.ico'),
+    path.join(app.getAppPath(), 'resources', 'icon.png'),
     path.join(app.getAppPath(), '..', 'resources', 'icon.ico'),
     path.join(import.meta.dirname, '..', 'resources', 'icon.ico'),
     path.join(import.meta.dirname, '..', '..', 'resources', 'icon.ico'),
@@ -17,12 +21,17 @@ export function getTrayIcon(): NativeImage {
 
   for (const p of candidatePaths) {
     if (fs.existsSync(p)) {
-      const img = nativeImage.createFromPath(p)
-      if (!img.isEmpty()) return img
+      try {
+        const img = nativeImage.createFromPath(p)
+        if (!img.isEmpty()) return img
+      } catch {}
     }
   }
 
-  return nativeImage.createEmpty()
+  // Fallback 16x16 PNG notch icon so system tray icon is never blank/invisible
+  const fallbackBase64 =
+    'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAAwSURBVDhPY2AYBaNgFCx4wIBD8///jwP+x8bGBjAZhmGAKs4Aupn/o2AUjIJRMApGAAIAy+0aGk4n9mMAAAAASUVORK5CYII='
+  return nativeImage.createFromDataURL(fallbackBase64)
 }
 
 export function createTray(mainWindow: BrowserWindow): Tray {

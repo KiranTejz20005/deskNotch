@@ -128,10 +128,15 @@ app.whenReady().then(async () => {
   })
 
   if (isProd) {
-    await mainWindow.loadURL('app://./home')
+    await mainWindow.loadURL('app://./home').catch((err) => console.error('Failed to load prod URL:', err))
   } else {
-    const port = process.argv[2]
-    await mainWindow.loadURL(`http://localhost:${port}/home`)
+    const port = process.argv[2] || '8888'
+    try {
+      await mainWindow.loadURL(`http://localhost:${port}/home`)
+    } catch (err) {
+      console.error('Dev server load failed, falling back to app://:', err)
+      await mainWindow.loadURL('app://./home').catch(() => {})
+    }
   }
 
   registerIpc()

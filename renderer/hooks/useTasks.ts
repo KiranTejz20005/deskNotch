@@ -1,5 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
-export type Task = { id: string; label: string; done: boolean }
+
+export type Task = {
+  id: string
+  label: string
+  done: boolean
+  reminder?: string | null
+  minutes?: number
+}
 
 /**
  * The one copy of the task list.
@@ -11,9 +18,14 @@ export type Task = { id: string; label: string; done: boolean }
 export interface TaskStore {
   tasks: Task[]
   setTasks: React.Dispatch<React.SetStateAction<Task[]>>
-  add: (label: string) => void
+  add: (label: string, minutes?: number) => void
   toggle: (id: string) => void
   remove: (id: string) => void
+  rename: (id: string, newLabel: string) => void
+  duplicate: (id: string) => void
+  setReminder: (id: string, reminder: string | null) => void
+  setMinutes: (id: string, minutes: number | undefined) => void
+  reorder: (newTasks: Task[]) => void
 }
 
 export function useTasks(): TaskStore {
@@ -38,10 +50,10 @@ export function useTasks(): TaskStore {
     void window.bridge?.invoke('store:set', 'todos', tasks)
   }, [tasks])
 
-  const add = (label: string) => {
+  const add = (label: string, minutes?: number) => {
     const trimmed = label.trim()
     if (!trimmed) return
-    setTasks((prev) => [...prev, { id: crypto.randomUUID(), label: trimmed, done: false }])
+    setTasks((prev) => [...prev, { id: crypto.randomUUID(), label: trimmed, done: false, minutes }])
   }
 
   const toggle = (id: string) =>
@@ -51,5 +63,35 @@ export function useTasks(): TaskStore {
 
   const remove = (id: string) => setTasks((prev) => prev.filter((task) => task.id !== id))
 
-  return { tasks, setTasks, add, toggle, remove }
+  const rename = (id: string, newLabel: string) => {
+    const trimmed = newLabel.trim()
+    if (!trimmed) return
+    setTasks((prev) => prev.map((task) => (task.id === id ? { ...task, label: trimmed } : task)))
+  }
+
+  const duplicate = (id: string) => {
+    setTasks((prev) => {
+      const idx = prev.findIndex((t) => t.id === id)
+      if (idx === -1) return prev
+      const target = prev[idx]
+      const copy: Task = { ...target, id: crypto.randomUUID(), label: `${target.label} (Copy)` }
+      const updated = [...prev]
+      updated.splice(idx + 1, 0, copy)
+      return updated
+    })
+  }
+
+  const setReminder = (id: string, reminder: string | null) => {
+    setTasks((prev) => prev.map((task) => (task.id === id ? { ...task, reminder } : task)))
+  }
+
+  const setMinutes = (id: string, minutes: number | undefined) => {
+    setTasks((prev) => prev.map((task) => (task.id === id ? { ...task, minutes } : task)))
+  }
+
+  const reorder = (newTasks: Task[]) => {
+    setTasks(newTasks)
+  }
+
+  return { tasks, setTasks, add, toggle, remove, rename, duplicate, setReminder, setMinutes, reorder }
 }
