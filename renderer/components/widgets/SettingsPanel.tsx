@@ -60,6 +60,8 @@ export interface Settings {
   hiddenLimits: string[]
   /** The monitor on which deskNotch appears; 'primary' or a display ID string. */
   selectedDisplayId?: string
+  /** Hide deskNotch when another app enters fullscreen. */
+  hideOnFullscreen?: boolean
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -86,6 +88,7 @@ export const DEFAULT_SETTINGS: Settings = {
   focusMinutes: 25,
   hiddenLimits: [],
   selectedDisplayId: 'primary',
+  hideOnFullscreen: true,
 }
 
 /** The bots on offer: a short, varied few rather than all eighteen. */
@@ -522,6 +525,9 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onChange
         <Group>
           <Row title="Start with Windows" detail="Launch deskNotch automatically when you log into Windows">
             <Switch label="Start with Windows" on={settings.startOnBoot} onChange={(v) => set('startOnBoot', v)} />
+          </Row>
+          <Row title="Hide on Fullscreen" detail="Automatically hide deskNotch when another app enters fullscreen">
+            <Switch label="Hide on Fullscreen" on={settings.hideOnFullscreen ?? true} onChange={(v) => set('hideOnFullscreen', v)} />
           </Row>
         </Group>
         {displays.length > 1 && (

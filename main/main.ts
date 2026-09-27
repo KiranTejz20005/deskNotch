@@ -8,6 +8,7 @@ import { stopPrivacyIpc } from './ipc/privacy'
 import { startScreenshotWatch, stopScreenshotWatch } from './ipc/screenshots'
 import { readStore } from './store'
 import { resolveTargetDisplay, setMainWindowForDisplay, setupDisplayListeners } from './display'
+import { startFullscreenWatch, stopFullscreenWatch } from './fullscreen'
 
 const isProd = process.env.NODE_ENV === 'production'
 
@@ -65,7 +66,7 @@ app.whenReady().then(async () => {
   let lastCursor = ''
 
   const applyCursorHitTest = () => {
-    if (mainWindow.isDestroyed()) return
+    if (mainWindow.isDestroyed() || !mainWindow.isVisible()) return
 
     const { x, y } = screen.getCursorScreenPoint()
     const windowBounds = mainWindow.getBounds()
@@ -127,6 +128,7 @@ app.whenReady().then(async () => {
   setupDisplayListeners(STRIP_HEIGHT)
   startSmtc(mainWindow)
   startScreenshotWatch()
+  startFullscreenWatch(mainWindow)
 })
 
 app.on('window-all-closed', () => {
@@ -134,5 +136,6 @@ app.on('window-all-closed', () => {
   stopMediaIpc()
   stopPrivacyIpc()
   stopScreenshotWatch()
+  stopFullscreenWatch()
   app.quit()
 })
