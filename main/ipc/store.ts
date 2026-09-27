@@ -2,6 +2,7 @@
 import { ipcMain } from 'electron'
 import { readStore, writeStore, type StoreShape } from '../store'
 import { updateNotchWindowPosition } from '../display'
+import { checkAndApplyFullscreenState } from '../fullscreen'
 
 export function registerStoreIpc() {
   ipcMain.handle('store:get', (_event, key: keyof StoreShape) => readStore()[key])
@@ -10,6 +11,7 @@ export function registerStoreIpc() {
     writeStore({ ...readStore(), [key]: value } as StoreShape)
     if (key === 'settings') {
       updateNotchWindowPosition()
+      checkAndApplyFullscreenState()
     }
     return true
   })
