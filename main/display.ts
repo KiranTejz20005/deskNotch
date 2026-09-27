@@ -118,20 +118,26 @@ export function updateNotchWindowPosition(STRIP_HEIGHT: number = 500) {
 
   const store = readStore()
   const settings = (store.settings ?? {}) as Record<string, unknown>
-  const allDisplays = screen.getAllDisplays()
-  if (allDisplays.length === 0) return
+  const primaryDisplay = screen.getPrimaryDisplay()
+  const rawDisplays = screen.getAllDisplays()
+  if (rawDisplays.length === 0) return
+
+  const sortedDisplays = [
+    primaryDisplay,
+    ...rawDisplays.filter((d) => d.id !== primaryDisplay.id).sort((a, b) => a.bounds.x - b.bounds.x),
+  ]
 
   let selectedDisplayId = (settings.selectedDisplayId as string) || 'both'
   if (selectedDisplayId === 'primary') {
-    selectedDisplayId = String(screen.getPrimaryDisplay().id)
+    selectedDisplayId = String(primaryDisplay.id)
   }
 
   if (selectedDisplayId === 'both') {
-    // 1. Main window on Display 0
-    positionWindowOnDisplay(mainWindowRef, allDisplays[0], STRIP_HEIGHT)
+    // 1. Main window on Primary Display
+    positionWindowOnDisplay(mainWindowRef, sortedDisplays[0], STRIP_HEIGHT)
 
     // 2. Extra windows for Display 1..N
-    const targetExtraDisplays = allDisplays.slice(1)
+    const targetExtraDisplays = sortedDisplays.slice(1)
 
     // Clean up excess extra windows
     while (extraWindows.length > targetExtraDisplays.length) {
