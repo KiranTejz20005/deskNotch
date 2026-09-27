@@ -58,6 +58,8 @@ export interface Settings {
   /** AI limits switched off, by key ("Claude-SESSION"). Hidden rather than
    *  shown, so a limit a tool adds later appears without asking. */
   hiddenLimits: string[]
+  /** The monitor on which deskNotch appears; 'primary' or a display ID string. */
+  selectedDisplayId?: string
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -83,6 +85,7 @@ export const DEFAULT_SETTINGS: Settings = {
   companionSleeps: 'time',
   focusMinutes: 25,
   hiddenLimits: [],
+  selectedDisplayId: 'primary',
 }
 
 /** The bots on offer: a short, varied few rather than all eighteen. */
@@ -239,6 +242,15 @@ interface SettingsPanelProps {
   aiLimits: ProviderLimits[] | null
 }
 
+export interface DisplayInfo {
+  id: string
+  label: string
+  bounds: { x: number; y: number; width: number; height: number }
+  workArea: { x: number; y: number; width: number; height: number }
+  scaleFactor: number
+  isPrimary: boolean
+}
+
 /**
  * Settings, the way System Settings does it: a short list of sections on the
  * left, one section at a time on the right as grouped rows, and every row
@@ -248,6 +260,17 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onChange
   const set = <K extends keyof Settings>(key: K, value: Settings[K]) => onChange({ ...settings, [key]: value })
   const { photo, pick } = usePhoto()
   const [section, setSection] = useState<SectionId>('glance')
+  const [displays, setDisplays] = React.useState<DisplayInfo[]>([])
+
+  React.useEffect(() => {
+    window.bridge?.invoke<DisplayInfo[]>('display:get-all').then((list) => {
+      if (Array.isArray(list)) setDisplays(list)
+    })
+    const unsub = window.bridge?.on<DisplayInfo[]>('display:changed', (list) => {
+      if (Array.isArray(list)) setDisplays(list)
+    })
+    return () => unsub?.()
+  }, [])
 
   const hidden = settings.hiddenLimits ?? []
   const aiCards = visibleLimits(aiLimits, hidden).length
@@ -501,6 +524,41 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onChange
             <Switch label="Start with Windows" on={settings.startOnBoot} onChange={(v) => set('startOnBoot', v)} />
           </Row>
         </Group>
+        {displays.length > 1 && (
+          <Group>
+            <Row title="Display" detail="Choose which monitor deskNotch appears on">
+              {displays.length <= 3 ? (
+                <Segmented
+                  id="display"
+                  options={[
+                    { id: 'primary', label: 'Primary' },
+                    ...displays.map((d, i) => ({
+                      id: d.id,
+                      label: d.isPrimary ? `Display ${i + 1} ★` : `Display ${i + 1}`,
+                    })),
+                  ]}
+                  value={settings.selectedDisplayId ?? 'primary'}
+                  onChange={(v) => set('selectedDisplayId', v)}
+                />
+              ) : (
+                <select
+                  value={settings.selectedDisplayId ?? 'primary'}
+                  onChange={(e) => set('selectedDisplayId', e.target.value)}
+                  className="h-[24px] max-w-[190px] rounded-[7px] bg-white/[0.1] px-2 text-[11px] font-medium text-white outline-none border border-white/10"
+                >
+                  <option value="primary" className="bg-[#141418] text-white">
+                    Primary display
+                  </option>
+                  {displays.map((d, i) => (
+                    <option key={d.id} value={d.id} className="bg-[#141418] text-white">
+                      {d.label || `Display ${i + 1}`}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </Row>
+          </Group>
+        )}
       </>
     ),
   }
