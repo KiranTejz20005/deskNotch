@@ -7,6 +7,8 @@ import { stopMediaIpc } from './ipc/media'
 import { stopPrivacyIpc } from './ipc/privacy'
 import { stopUsageIpc } from './ipc/usage'
 import { startScreenshotWatch, stopScreenshotWatch } from './ipc/screenshots'
+import { readStore } from './store'
+import { resolveTargetDisplay, setMainWindowForDisplay, setupDisplayListeners } from './display'
 
 const isProd = process.env.NODE_ENV === 'production'
 
@@ -21,7 +23,9 @@ app.whenReady().then(async () => {
     app.setAppUserModelId('com.devezio.desknotch')
   }
 
-  const { width: screenWidth, x: screenX, y: screenY } = screen.getPrimaryDisplay().bounds
+  const initialSettings = (readStore().settings ?? {}) as Record<string, unknown>
+  const targetDisplay = resolveTargetDisplay(initialSettings.selectedDisplayId as string)
+  const { width: screenWidth, x: screenX, y: screenY } = targetDisplay.bounds
 
   const mainWindow = new BrowserWindow({
     width: screenWidth,
@@ -120,6 +124,8 @@ app.whenReady().then(async () => {
   }
 
   registerIpc()
+  setMainWindowForDisplay(mainWindow)
+  setupDisplayListeners(STRIP_HEIGHT)
   startSmtc(mainWindow)
   startScreenshotWatch()
 })
