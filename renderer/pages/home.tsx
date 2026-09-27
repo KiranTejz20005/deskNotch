@@ -162,9 +162,9 @@ export default function HomePage() {
   }, [])
   const openChanged = (open: boolean) => {
     notchOpen.current = open
-    // Folded away: the moment is over; the notch is itself again next time.
+    // Folded away: reset to the main Glance view so hovering always opens on Glance.
     if (!open) {
-      if (beforePeek.current !== null) setView(beforePeek.current)
+      setView('glance')
       beforePeek.current = null
       setCapture(null)
     }

@@ -530,41 +530,39 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onChange
             <Switch label="Hide on Fullscreen" on={settings.hideOnFullscreen ?? true} onChange={(v) => set('hideOnFullscreen', v)} />
           </Row>
         </Group>
-        {displays.length > 1 && (
-          <Group>
-            <Row title="Display" detail="Choose which monitor deskNotch appears on">
-              {displays.length <= 3 ? (
-                <Segmented
-                  id="display"
-                  options={[
-                    { id: 'primary', label: 'Primary' },
-                    ...displays.map((d, i) => ({
-                      id: d.id,
-                      label: d.isPrimary ? `Display ${i + 1} ★` : `Display ${i + 1}`,
-                    })),
-                  ]}
-                  value={settings.selectedDisplayId ?? 'primary'}
-                  onChange={(v) => set('selectedDisplayId', v)}
-                />
-              ) : (
-                <select
-                  value={settings.selectedDisplayId ?? 'primary'}
-                  onChange={(e) => set('selectedDisplayId', e.target.value)}
-                  className="h-[24px] max-w-[190px] rounded-[7px] bg-white/[0.1] px-2 text-[11px] font-medium text-white outline-none border border-white/10"
-                >
-                  <option value="primary" className="bg-[#141418] text-white">
-                    Primary display
+        <Group>
+          <Row title="Display" detail="Choose which monitor deskNotch appears on">
+            {displays.length <= 3 ? (
+              <Segmented
+                id="display"
+                options={[
+                  { id: 'primary', label: 'Primary' },
+                  ...displays.map((d, i) => ({
+                    id: d.id,
+                    label: d.isPrimary ? `Display ${i + 1} ★` : `Display ${i + 1}`,
+                  })),
+                ]}
+                value={settings.selectedDisplayId ?? 'primary'}
+                onChange={(v) => set('selectedDisplayId', v)}
+              />
+            ) : (
+              <select
+                value={settings.selectedDisplayId ?? 'primary'}
+                onChange={(e) => set('selectedDisplayId', e.target.value)}
+                className="h-[24px] max-w-[190px] rounded-[7px] bg-white/[0.1] px-2 text-[11px] font-medium text-white outline-none border border-white/10"
+              >
+                <option value="primary" className="bg-[#141418] text-white">
+                  Primary display
+                </option>
+                {displays.map((d, i) => (
+                  <option key={d.id} value={d.id} className="bg-[#141418] text-white">
+                    {d.label || `Display ${i + 1}`}
                   </option>
-                  {displays.map((d, i) => (
-                    <option key={d.id} value={d.id} className="bg-[#141418] text-white">
-                      {d.label || `Display ${i + 1}`}
-                    </option>
-                  ))}
-                </select>
-              )}
-            </Row>
-          </Group>
-        )}
+                ))}
+              </select>
+            )}
+          </Row>
+        </Group>
       </>
     ),
   }

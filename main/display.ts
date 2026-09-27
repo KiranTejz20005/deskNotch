@@ -16,9 +16,9 @@ export function getDisplaysInfo(): DisplayInfo[] {
 
   return all.map((d, index) => {
     const isPrimary = d.id === primary.id
-    const name = d.label ? d.label : `Display ${index + 1}`
+    const name = d.label && d.label.trim() ? d.label : `Display ${index + 1}`
     const res = `${d.bounds.width}×${d.bounds.height}`
-    const label = isPrimary ? `${name} (Primary - ${res})` : `${name} (${res})`
+    const label = isPrimary ? `${name} (Primary · ${res})` : `${name} (${res})`
     return {
       id: String(d.id),
       label,
@@ -38,7 +38,9 @@ export function resolveTargetDisplay(selectedDisplayId?: string): Display {
     return primaryDisplay
   }
 
-  const found = allDisplays.find((d) => String(d.id) === selectedDisplayId)
+  const found = allDisplays.find(
+    (d, idx) => String(d.id) === selectedDisplayId || `display-${idx}` === selectedDisplayId
+  )
   return found || primaryDisplay
 }
 
@@ -63,16 +65,8 @@ export function updateNotchWindowPosition(STRIP_HEIGHT: number = 500) {
     height: STRIP_HEIGHT,
   }
 
-  const currentBounds = mainWindowRef.getBounds()
-  if (
-    currentBounds.x !== newBounds.x ||
-    currentBounds.y !== newBounds.y ||
-    currentBounds.width !== newBounds.width ||
-    currentBounds.height !== newBounds.height
-  ) {
-    mainWindowRef.setBounds(newBounds)
-  }
-
+  mainWindowRef.setBounds(newBounds)
+  mainWindowRef.setPosition(newBounds.x, newBounds.y)
   notifyDisplaysChanged()
 }
 
