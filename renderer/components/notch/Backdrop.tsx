@@ -141,13 +141,7 @@ export const Backdrop: React.FC<{ kind: 'mica' | 'glass'; host: React.RefObject<
               : 'linear-gradient(180deg, rgba(8, 8, 12, 0.12) 0%, rgba(8, 8, 12, 0.26) 100%)',
         }}
       />
-      {/* Glass catches the light: a bright hairline along the top edge and a soft sheen. */}
-      {kind === 'glass' && (
-        <>
-          <div className="absolute inset-x-6 top-0 h-px bg-gradient-to-r from-transparent via-white/50 to-transparent" />
-          <div className="absolute inset-0 bg-[radial-gradient(120%_80%_at_20%_0%,rgba(255,255,255,0.10),transparent_55%)]" />
-        </>
-      )}
+
     </div>
   )
 }

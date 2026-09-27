@@ -9,6 +9,7 @@ import { registerFilesIpc } from './files'
 import { registerPrivacyIpc } from './privacy'
 import { registerAppsIpc } from './apps'
 import { registerUsageIpc } from './usage'
+import { registerBatteryIpc } from './battery'
 
 export function registerIpc() {
   registerStoreIpc()
@@ -21,4 +22,6 @@ export function registerIpc() {
   registerPrivacyIpc()
   registerAppsIpc()
   registerUsageIpc()
+  registerBatteryIpc()
 }
+

@@ -275,7 +275,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onChange
           <Row title="Next task" detail="Your next few tasks, tickable">
             {card('showTasks', 'Next task')}
           </Row>
-          <Row title="Right now" detail="Which apps are on your mic or camera, and the battery. Only while there is something to say; not one of the four">
+          <Row title="Right now" detail="Which apps are on your mic or camera, battery status, or system usage">
             {card('showStatus', 'Right now')}
           </Row>
           <Row

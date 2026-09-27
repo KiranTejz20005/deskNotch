@@ -440,17 +440,7 @@ export default function HomePage() {
                   {view === 'glance' ? (
                     <AloneContext.Provider value={widths.length === 1}>
                     <div className={`relative flex h-full items-start ${widths.length === 1 ? 'justify-center' : ''}`} style={{ gap: TILE_GAP }}>
-                      {/* Light bleeding from behind the notch, in the current
-                          tint. Keeps the surface from reading as a flat black
-                          rectangle without adding a single border. */}
-                      <motion.div
-                        aria-hidden
-                        className="pointer-events-none absolute -inset-x-6 -top-12 h-28 -z-10 blur-2xl"
-                        animate={{
-                          background: `radial-gradient(50% 100% at 18% 0%, rgba(${tint}, 0.2), transparent 72%)`,
-                        }}
-                        transition={{ duration: 0.9 }}
-                      />
+
 
                       {showCompanion && (
                         <CompanionTile

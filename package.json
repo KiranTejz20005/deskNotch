@@ -10,7 +10,7 @@
   "type": "module",
   "main": "app/main.js",
   "scripts": {
-    "dev": "node scripts/patch-nextron.cjs && nextron --startup-delay 20000",
+    "dev": "npm run clean:port && node scripts/patch-nextron.cjs && nextron --startup-delay 20000",
     "dev:norestart": "node scripts/patch-nextron.cjs && set NEXTRON_NO_RESTART=1 && nextron --startup-delay 20000",
     "build": "nextron build",
     "clean:port": "npx --yes kill-port 8888",

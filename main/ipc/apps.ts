@@ -175,6 +175,12 @@ export const nameOf = async (key: string) => {
 export const warmNames = () => void allApps()
 
 export function registerAppsIpc() {
+  // Pre-warm app cache in the background on startup for instant response
+  setTimeout(() => {
+    void allApps()
+    void topApps()
+  }, 500)
+
   ipcMain.handle('apps:top', () => topApps())
   ipcMain.handle('apps:all', () => allApps())
   ipcMain.handle('apps:describe', (_event, ids: unknown) =>
@@ -190,3 +196,4 @@ export function registerAppsIpc() {
     else spawn('explorer.exe', [`shell:AppsFolder\\${id}`], { detached: true, stdio: 'ignore' }).unref()
   })
 }
+

@@ -4,15 +4,13 @@ import type { Settings } from '../components/widgets/SettingsPanel'
 export const MAX_CARDS = 4
 
 /**
- * How many cards a setting would put in the glance, counting the widest case
- * (music playing). The time card only appears when the companion is not
- * there to tell the time; focus takes the task into its own card. The Right
- * now card is not counted: it is there only while something is happening, and
- * takes an AI card's place for that while rather than a seat of its own.
+ * How many cards settings put in the glance.
+ * Max 4 cards allowed at a time.
  */
 export const cardCount = (settings: Settings, aiCards: number) =>
   (settings.showAvatar ? 1 : 0) +
-  (settings.showMusic || !settings.showAvatar ? 1 : 0) +
+  (settings.showMusic ? 1 : 0) +
   (settings.showTasks && !settings.showFocus ? 1 : 0) +
   (settings.showFocus ? 1 : 0) +
+  (settings.showStatus ? 1 : 0) +
   (settings.showAiUsage ? aiCards : 0)

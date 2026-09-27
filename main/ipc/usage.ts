@@ -72,9 +72,6 @@ const start = () => {
   sampler.on('exit', () => {
     sampler = null
   })
-  reaper = setInterval(() => {
-    if (Date.now() > wantedUntil) stop()
-  }, 2000)
 }
 
 /** Busy share of every core since the last call. */
@@ -94,13 +91,15 @@ const cpu = () => {
 }
 
 export function registerUsageIpc() {
-  // Asking is what keeps the sampler alive; the reaper stops it once nobody has asked for a while.
+  // Start GPU sampler early in background for instant UI response
+  setTimeout(start, 500)
+
   ipcMain.handle('usage:get', (): Usage => {
-    wantedUntil = Date.now() + IDLE
     start()
     return { cpu: cpu(), memory: 1 - os.freemem() / os.totalmem(), gpu }
   })
 }
+
 
 export function stopUsageIpc() {
   stop()
