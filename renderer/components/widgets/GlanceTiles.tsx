@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
-import { Check, Maximize2, Plus } from 'lucide-react'
+import { Check, Maximize2, Plus, Play, MoreHorizontal } from 'lucide-react'
 import { MediaControls } from '../notch/MediaControls'
 import { ScrollingText } from '../notch/ScrollingText'
 import { Tile, TileLabel } from '../ui/tile'
@@ -8,7 +8,10 @@ import { QuickAdd } from './QuickAdd'
 import { useNow } from '../../hooks/useNow'
 import { useMediaProgress } from '../../hooks/useMediaProgress'
 import type { NowPlaying } from '../../hooks/useNowPlaying'
-import type { TaskStore } from '../../hooks/useTasks'
+import type { TaskStore, Task } from '../../hooks/useTasks'
+import type { Timer } from '../../hooks/useTimer'
+import { TaskContextMenu } from './tasks/TaskContextMenu'
+import { FocusDurationSheet } from './tasks/FocusDurationSheet'
 
 const spring = { type: 'spring' as const, stiffness: 380, damping: 32 }
 
@@ -157,8 +160,6 @@ export const TimeTile: React.FC = () => {
   )
 }
 
-/** How many open tasks the card lists before it says "N more". */
-const SHOWN = 3
 
 /**
  * Tasks, the way the Reminders widget does it: a coloured title and a count,
@@ -166,10 +167,18 @@ const SHOWN = 3
  * circle, strikes the text, and lets the row slide away a beat later, so the
  * list settles rather than jumps.
  */
-export const TaskTile: React.FC<{ tasks: TaskStore; accent: string }> = ({ tasks, accent }) => {
+export const TaskTile: React.FC<{
+  tasks: TaskStore
+  accent: string
+  timer?: Timer
+  onOpenDesk?: () => void
+}> = ({ tasks, accent, timer, onOpenDesk }) => {
   const open = tasks.tasks.filter((task) => !task.done)
   const [adding, setAdding] = useState(false)
   const [ticked, setTicked] = useState<string[]>([])
+  const [contextMenuTask, setContextMenuTask] = useState<Task | null>(null)
+  const [menuPos, setMenuPos] = useState({ x: 0, y: 0 })
+  const [focusSheetTask, setFocusSheetTask] = useState<Task | null>(null)
 
   const tick = (id: string) => {
     if (ticked.includes(id)) return
@@ -180,18 +189,29 @@ export const TaskTile: React.FC<{ tasks: TaskStore; accent: string }> = ({ tasks
     }, 420)
   }
 
+  const handleOpenContextMenu = (task: Task, e: React.MouseEvent) => {
+    const rect = e.currentTarget.getBoundingClientRect()
+    setMenuPos({ x: Math.min(e.clientX - 60, window.innerWidth - 210), y: rect.bottom + 4 })
+    setContextMenuTask(task)
+  }
+
   return (
     <Tile width={TASK_WIDTH}>
-      <div className="flex h-full flex-col">
-        <div className="mb-2 flex items-center justify-between">
-          <span className="flex items-baseline gap-1.5 leading-none">
+      <div className="relative flex h-full flex-col min-w-0">
+        <div className="mb-2 flex items-center justify-between shrink-0">
+          <button
+            type="button"
+            onClick={onOpenDesk}
+            className="flex items-baseline gap-1.5 leading-none hover:opacity-80 transition-opacity text-left"
+            title="Open Tasks View"
+          >
             <span className="text-[12px] font-semibold" style={{ color: accent }}>
               {adding ? 'New task' : 'Tasks'}
             </span>
             {!adding && open.length > 0 && (
               <span className="text-[12px] font-semibold tabular-nums text-white/30">{open.length}</span>
             )}
-          </span>
+          </button>
           {!adding && (
             <motion.button
               type="button"
@@ -214,7 +234,8 @@ export const TaskTile: React.FC<{ tasks: TaskStore; accent: string }> = ({ tasks
           <motion.div
             initial={{ opacity: 0, scale: 0.96 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="flex flex-1 flex-col items-center justify-center gap-1.5 pb-2"
+            className="flex flex-1 flex-col items-center justify-center gap-1.5 pb-2 cursor-pointer"
+            onClick={onOpenDesk}
           >
             <span className="grid h-[26px] w-[26px] place-items-center rounded-full" style={{ background: accent }}>
               <Check size={14} strokeWidth={3} className="text-black" />
@@ -222,56 +243,111 @@ export const TaskTile: React.FC<{ tasks: TaskStore; accent: string }> = ({ tasks
             <span className="text-[12.5px] font-medium text-white/80">All done</span>
           </motion.div>
         ) : (
-          <div className="flex flex-col">
+          <div className="flex flex-1 flex-col min-h-0 overflow-y-auto pr-0.5 scrollbar-none max-h-[140px]">
             <AnimatePresence initial={false}>
-              {open.slice(0, SHOWN).map((task) => {
+              {open.map((task) => {
                 const done = ticked.includes(task.id)
                 return (
-                  <motion.button
+                  <motion.div
                     key={task.id}
-                    type="button"
                     layout
                     initial={{ opacity: 0, y: 6 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, x: 12, transition: { duration: 0.18 } }}
                     transition={spring}
-                    onClick={(event) => {
-                      event.stopPropagation()
-                      tick(task.id)
+                    onContextMenu={(e) => {
+                      e.preventDefault()
+                      handleOpenContextMenu(task, e)
                     }}
-                    className="group/row flex h-[24px] min-w-0 items-center gap-2 text-left"
+                    className="group/row flex h-[26px] min-w-0 items-center justify-between gap-1 text-left rounded-[5px] px-1 hover:bg-white/[0.06] transition-colors"
                   >
-                    <span
-                      className={`grid h-[15px] w-[15px] shrink-0 place-items-center rounded-full border-[1.5px] transition-colors duration-150 ${
-                        done ? '' : 'border-white/30 group-hover/row:border-white/60'
-                      }`}
-                      style={done ? { borderColor: accent, background: accent } : undefined}
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        tick(task.id)
+                      }}
+                      className="flex min-w-0 flex-1 items-center gap-2 py-0.5 text-left"
                     >
-                      {done && (
-                        <motion.span initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: 'spring', stiffness: 600, damping: 20 }}>
-                          <Check size={9} strokeWidth={3.4} className="text-black" />
-                        </motion.span>
+                      <span
+                        className={`grid h-[15px] w-[15px] shrink-0 place-items-center rounded-full border-[1.5px] transition-colors duration-150 ${
+                          done ? '' : 'border-white/30 group-hover/row:border-white/60'
+                        }`}
+                        style={done ? { borderColor: accent, background: accent } : undefined}
+                      >
+                        {done && (
+                          <motion.span initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: 'spring', stiffness: 600, damping: 20 }}>
+                            <Check size={9} strokeWidth={3.4} className="text-black" />
+                          </motion.span>
+                        )}
+                      </span>
+                      <span className="relative min-w-0 truncate text-[12.5px] leading-none">
+                        <span className={`transition-colors duration-200 ${done ? 'text-white/35' : 'text-white/85'}`}>{task.label}</span>
+                        <motion.span
+                          aria-hidden
+                          className="absolute left-0 top-1/2 h-px bg-white/45"
+                          initial={false}
+                          animate={{ width: done ? '100%' : '0%' }}
+                          transition={{ duration: 0.22, ease: 'easeOut' }}
+                        />
+                      </span>
+                    </button>
+
+                    <div className="flex items-center gap-0.5 opacity-60 group-hover/row:opacity-100 focus-within:opacity-100 transition-opacity shrink-0">
+                      {timer && (
+                        <button
+                          type="button"
+                          title="Start focus"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setFocusSheetTask(task)
+                          }}
+                          className="grid h-5 w-5 place-items-center rounded-[4px] text-white/50 hover:bg-white/15 hover:text-white transition-colors"
+                        >
+                          <Play size={10} fill="currentColor" className="ml-0.5" />
+                        </button>
                       )}
-                    </span>
-                    <span className="relative min-w-0 truncate text-[12.5px] leading-none">
-                      <span className={`transition-colors duration-200 ${done ? 'text-white/35' : 'text-white/85'}`}>{task.label}</span>
-                      <motion.span
-                        aria-hidden
-                        className="absolute left-0 top-1/2 h-px bg-white/45"
-                        initial={false}
-                        animate={{ width: done ? '100%' : '0%' }}
-                        transition={{ duration: 0.22, ease: 'easeOut' }}
-                      />
-                    </span>
-                  </motion.button>
+                      <button
+                        type="button"
+                        title="More options"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleOpenContextMenu(task, e)
+                        }}
+                        className="grid h-5 w-5 place-items-center rounded-[4px] text-white/50 hover:bg-white/15 hover:text-white transition-colors"
+                      >
+                        <MoreHorizontal size={11} />
+                      </button>
+                    </div>
+                  </motion.div>
                 )
               })}
             </AnimatePresence>
-            {open.length > SHOWN && (
-              <span className="mt-0.5 pl-[23px] text-[11px] font-medium text-white/30">{open.length - SHOWN} more</span>
-            )}
           </div>
         )}
+
+        <AnimatePresence>
+          {contextMenuTask && (
+            <TaskContextMenu
+              task={contextMenuTask}
+              tasks={tasks}
+              position={menuPos}
+              onClose={() => setContextMenuTask(null)}
+              onOpenFocusSheet={(t) => setFocusSheetTask(t)}
+              onStartRename={() => setAdding(false)}
+            />
+          )}
+
+          {focusSheetTask && timer && (
+            <FocusDurationSheet
+              task={focusSheetTask}
+              timer={timer}
+              accent={accent}
+              onClose={() => setFocusSheetTask(null)}
+              onSaveMinutes={(t, m) => tasks.setMinutes(t.id, m)}
+            />
+          )}
+        </AnimatePresence>
       </div>
     </Tile>
   )

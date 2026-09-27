@@ -1,13 +1,26 @@
 import React, { useEffect, useRef, useState } from 'react'
 import Head from 'next/head'
 import { AnimatePresence, motion } from 'motion/react'
-import { Inbox, LampDesk, LayoutGrid, Settings2 } from 'lucide-react'
+import {
+  Inbox,
+  LayoutGrid,
+  Settings2,
+  CheckSquare,
+  Volume2,
+  Timer,
+  Clipboard,
+  Sun,
+  BellOff,
+  Bell,
+  Thermometer,
+} from 'lucide-react'
 import { NotchChassis, CHROME_X, CHROME_Y, PAD } from '../components/notch/NotchChassis'
 import { AmbientVideo } from '../components/notch/AmbientVideo'
 import { CollapsedStatus, type Moment } from '../components/notch/CollapsedStatus'
 import { ViewRail, RailButton, type ViewDefinition } from '../components/notch/ViewSwitcher'
 import { SettingsPanel, DEFAULT_SETTINGS, SETTINGS_PANE, type Settings } from '../components/widgets/SettingsPanel'
 import { DeskView, DESK_WIDTH, DESK_HEIGHT } from '../components/widgets/DeskView'
+import { FEATURE_CARD_WIDTH, FEATURE_CARD_HEIGHT } from '../components/ui/FeatureCard'
 import { AppsRow } from '../components/widgets/AppsRow'
 import { useFocusLog } from '../hooks/useFocusLog'
 import { FileStrip, SHELF_HEIGHT, shelfWidth } from '../components/widgets/FileStrip'
@@ -17,6 +30,13 @@ import type { FileItem } from '../hooks/useFiles'
 import { botAvatarPalette } from 'bot-avatars'
 import { CompanionTile, COMPANION_WIDTH, COMPANION_OPEN_WIDTH, COMPANION_TIME_WIDTH, type CompanionMode } from '../components/widgets/CompanionTile'
 import { MediaTile, TimeTile, TaskTile, MEDIA_WIDTH, TIME_WIDTH, TASK_WIDTH } from '../components/widgets/GlanceTiles'
+import { VolumeTile } from '../components/widgets/VolumeTile'
+import { StopwatchTile } from '../components/widgets/StopwatchTile'
+import { ClipboardTile } from '../components/widgets/ClipboardTile'
+import { WeatherTile } from '../components/widgets/WeatherTile'
+import { DndTile } from '../components/widgets/DndTile'
+import { NotificationTile } from '../components/widgets/NotificationTile'
+import { ThermalsTile } from '../components/widgets/ThermalsTile'
 import { FocusTile, FOCUS_WIDTH } from '../components/widgets/FocusTile'
 import { AiOrbs, providerWidth, visibleLimits } from '../components/widgets/AiOrbs'
 import { AloneContext, TILE, TILE_GAP } from '../components/ui/tile'
@@ -30,19 +50,37 @@ import { useTasks } from '../hooks/useTasks'
 import { useAiLimits } from '../hooks/useAiLimits'
 import { usePrivacy } from '../hooks/usePrivacy'
 import { useHeadphones } from '../hooks/useHeadphones'
+import { useWeather } from '../hooks/useWeather'
+import { useBattery } from '../hooks/useBattery'
+import { useBluetoothBattery } from '../hooks/useBluetoothBattery'
 
 /** The places to go, as circles on the dock. Settings is a control, not a
  *  place, so it sits after them with the lock. */
 const VIEWS: ViewDefinition[] = [
   { id: 'glance', label: 'Glance', icon: <LayoutGrid size={12} strokeWidth={2.2} /> },
-  { id: 'desk', label: 'Desk', icon: <LampDesk size={12} strokeWidth={2.2} /> },
+  { id: 'desk', label: 'Tasks', icon: <CheckSquare size={12} strokeWidth={2.2} /> },
   { id: 'files', label: 'Shelf', icon: <Inbox size={12} strokeWidth={2.2} /> },
+  { id: 'volume', label: 'Volume', icon: <Volume2 size={12} strokeWidth={2.2} /> },
+  { id: 'stopwatch', label: 'Stopwatch', icon: <Timer size={12} strokeWidth={2.2} /> },
+  { id: 'clipboard', label: 'Clipboard', icon: <Clipboard size={12} strokeWidth={2.2} /> },
+  { id: 'weather', label: 'Weather', icon: <Sun size={12} strokeWidth={2.2} /> },
+  { id: 'dnd', label: 'Focus / DND', icon: <BellOff size={12} strokeWidth={2.2} /> },
+  { id: 'notifications', label: 'Notifications', icon: <Bell size={12} strokeWidth={2.2} /> },
+  { id: 'thermals', label: 'Thermals', icon: <Thermometer size={12} strokeWidth={2.2} /> },
 ]
 
 /** Each view sets the shell it needs; the notch springs between them. */
 const SIZES: Record<string, { width: number; height: number }> = {
   desk: { width: DESK_WIDTH, height: DESK_HEIGHT },
   settings: { width: CHROME_X + 620, height: CHROME_Y + SETTINGS_PANE },
+  tasks: { width: DESK_WIDTH, height: DESK_HEIGHT },
+  volume: { width: FEATURE_CARD_WIDTH, height: FEATURE_CARD_HEIGHT },
+  stopwatch: { width: FEATURE_CARD_WIDTH, height: FEATURE_CARD_HEIGHT },
+  clipboard: { width: FEATURE_CARD_WIDTH, height: FEATURE_CARD_HEIGHT },
+  weather: { width: FEATURE_CARD_WIDTH, height: FEATURE_CARD_HEIGHT },
+  dnd: { width: FEATURE_CARD_WIDTH, height: FEATURE_CARD_HEIGHT },
+  notifications: { width: FEATURE_CARD_WIDTH, height: FEATURE_CARD_HEIGHT },
+  thermals: { width: FEATURE_CARD_WIDTH, height: FEATURE_CARD_HEIGHT },
 }
 
 /** The notch's side padding around the card row. */
@@ -56,7 +94,7 @@ export default function HomePage() {
   const wallpaperColor = useWallpaperColor()
   const timer = useTimer()
   const tasks = useTasks()
-  const focusLog = useFocusLog(timer)
+  useFocusLog(timer)
   const [view, setView] = useState('glance')
   // A file dragged over the notch from outside: open Files, where the shelf is
   // waiting to take it.
@@ -153,13 +191,19 @@ export default function HomePage() {
   )
 
   useEffect(() => {
-    const unsub = window.bridge?.on<string>('notch:navigate', (targetView) => {
+    const unsubNav = window.bridge?.on<string>('notch:navigate', (targetView) => {
       if (typeof targetView === 'string') {
         setView(targetView)
       }
     })
-    return () => unsub?.()
-  }, [])
+    const unsubOpen = window.bridge?.on('notch:open', () => {
+      peek(view || 'glance', 6000)
+    })
+    return () => {
+      unsubNav?.()
+      unsubOpen?.()
+    }
+  }, [view])
   const openChanged = (open: boolean) => {
     notchOpen.current = open
     // Folded away: reset to the main Glance view so hovering always opens on Glance.
@@ -173,6 +217,9 @@ export default function HomePage() {
   const { photo } = usePhoto()
   const privacy = usePrivacy()
   const headphones = useHeadphones()
+  const weather = useWeather()
+  const battery = useBattery()
+  const bluetooth = useBluetoothBattery()
 
   // "Just connected" moments on the closed bar: headphones, a Wi-Fi network,
   // a Bluetooth device. Each shows for a beat. What is already connected when
@@ -313,22 +360,35 @@ export default function HomePage() {
   const showTaskCard = settings.showTasks && !settings.showFocus
   const showTime = !showCompanion && !media && !showTaskCard && !settings.showFocus && shownLimits.length === 0
 
-  // Every card, in order, with its width — the notch is exactly as wide as
-  // they need. Past MAX_CARDS the AI cards, which come last, are the ones left off.
-  const fixed = [
-    // Wide while tasks mode shows its whole list, or focus its lengths (idle only).
-    showCompanion &&
-      ((hubOpen && settings.companionMode === 'tasks') ||
-      (hubOpen && settings.companionMode === 'focus' && !timer.isRunning && !(timer.remainingMs > 0 && !timer.finished))
-        ? COMPANION_OPEN_WIDTH
-        : hubOpen && settings.companionMode === 'time'
-          ? COMPANION_TIME_WIDTH
-          : COMPANION_WIDTH),
-    media && MEDIA_WIDTH,
-    showTime && TIME_WIDTH,
-    showTaskCard && TASK_WIDTH,
-    settings.showFocus && FOCUS_WIDTH,
-  ].filter((w): w is number => typeof w === 'number')
+  interface EnabledCard {
+    id: string
+    width: number
+  }
+
+  const allActiveCards: EnabledCard[] = [
+    showCompanion
+      ? {
+          id: 'companion',
+          width:
+            (hubOpen && settings.companionMode === 'tasks') ||
+            (hubOpen && settings.companionMode === 'focus' && !timer.isRunning && !(timer.remainingMs > 0 && !timer.finished))
+              ? COMPANION_OPEN_WIDTH
+              : hubOpen && settings.companionMode === 'time'
+                ? COMPANION_TIME_WIDTH
+                : COMPANION_WIDTH,
+        }
+      : null,
+    media ? { id: 'media', width: MEDIA_WIDTH } : null,
+    showTime ? { id: 'time', width: TIME_WIDTH } : null,
+    showTaskCard ? { id: 'task', width: TASK_WIDTH } : null,
+    settings.showFocus ? { id: 'focus', width: FOCUS_WIDTH } : null,
+  ].filter((c): c is EnabledCard => c !== null)
+
+  // Strictly cap Glance active cards at MAX_CARDS (4)
+  const visibleGlanceCards = allActiveCards.slice(0, MAX_CARDS)
+  const visibleCardIds = new Set(visibleGlanceCards.map((c) => c.id))
+
+  const fixed = visibleGlanceCards.map((c) => c.width)
   const aiShown = shownLimits.slice(0, Math.max(0, MAX_CARDS - fixed.length))
   const widths = [...fixed, ...aiShown.map(providerWidth)]
   const glanceWidth = PADDING * 2 + widths.reduce((sum, w) => sum + w, 0) + (widths.length - 1) * TILE_GAP
@@ -379,18 +439,20 @@ export default function HomePage() {
             }
             onOpenChange={openChanged}
             closeKey={closeKey}
-            rail={view === 'capture' || view === 'done' ? undefined : 
-              <>
-                <ViewRail views={shownViews} active={view} onChange={setView} />
-                <RailButton
-                  label="Settings"
-                  active={view === 'settings'}
-                  layoutId="rail-settings"
-                  onClick={() => setView((current) => (current === 'settings' ? 'glance' : 'settings'))}
-                >
-                  <Settings2 size={12} strokeWidth={2.2} />
-                </RailButton>
-              </>
+            rail={
+              view === 'capture' || view === 'done' ? undefined : (
+                <div className="flex items-center gap-1 overflow-x-auto scrollbar-none max-w-full">
+                  <ViewRail views={shownViews} active={view} onChange={setView} />
+                  <RailButton
+                    label="Settings"
+                    active={view === 'settings'}
+                    layoutId="rail-settings"
+                    onClick={() => setView((current) => (current === 'settings' ? 'glance' : 'settings'))}
+                  >
+                    <Settings2 size={12} strokeWidth={2.2} />
+                  </RailButton>
+                </div>
+              )
             }
             expandedContent={
               <AnimatePresence mode="wait">
@@ -417,7 +479,7 @@ export default function HomePage() {
                         transition={{ duration: 0.9 }}
                       />
 
-                      {showCompanion && (
+                      {visibleCardIds.has('companion') && (
                         <CompanionTile
                           avatar={settings.avatar}
                           photo={photo}
@@ -434,15 +496,45 @@ export default function HomePage() {
                           onToggle={() => setHubOpen((o) => !o)}
                         />
                       )}
-                      {media && <MediaTile media={media} tint={albumTint} />}
-                      {showTime && <TimeTile />}
-                      {showTaskCard && <TaskTile tasks={tasks} accent={accent} />}
-                      {settings.showFocus && (
+                      {visibleCardIds.has('media') && media && <MediaTile media={media} tint={albumTint} />}
+                      {visibleCardIds.has('time') && <TimeTile />}
+                      {visibleCardIds.has('task') && <TaskTile tasks={tasks} accent={accent} timer={timer} onOpenDesk={() => setView('desk')} />}
+                      {visibleCardIds.has('focus') && (
                         <FocusTile timer={timer} tasks={settings.showTasks ? tasks : undefined} minutes={settings.focusMinutes ?? 25} />
                       )}
                       <AiOrbs providers={aiShown} tint={orbTint} />
                     </div>
                     </AloneContext.Provider>
+                  ) : view === 'tasks' ? (
+                    <DeskView tasks={tasks} timer={timer} accent={accent} />
+                  ) : view === 'volume' ? (
+                    <div className="flex h-full items-start justify-center">
+                      <VolumeTile accent={accent} />
+                    </div>
+                  ) : view === 'stopwatch' ? (
+                    <div className="flex h-full items-start justify-center">
+                      <StopwatchTile accent={accent} />
+                    </div>
+                  ) : view === 'clipboard' ? (
+                    <div className="flex h-full items-start justify-center">
+                      <ClipboardTile accent={accent} />
+                    </div>
+                  ) : view === 'weather' ? (
+                    <div className="flex h-full items-start justify-center">
+                      <WeatherTile accent={accent} />
+                    </div>
+                  ) : view === 'dnd' ? (
+                    <div className="flex h-full items-start justify-center">
+                      <DndTile accent={accent} />
+                    </div>
+                  ) : view === 'notifications' ? (
+                    <div className="flex h-full items-start justify-center">
+                      <NotificationTile accent={accent} />
+                    </div>
+                  ) : view === 'thermals' ? (
+                    <div className="flex h-full items-start justify-center">
+                      <ThermalsTile accent={accent} />
+                    </div>
                   ) : view === 'done' ? (
                     <DoneView
                       timer={timer}
@@ -469,20 +561,7 @@ export default function HomePage() {
                   ) : view === 'settings' ? (
                     <SettingsPanel settings={settings} onChange={setSettings} aiLimits={aiLimits} />
                   ) : (
-                    <DeskView
-                      avatar={settings.avatar}
-                      photo={photo}
-                      tasks={tasks}
-                      timer={timer}
-                      minutes={settings.focusMinutes ?? 25}
-                      onMinutes={(m) => setSettings((s) => ({ ...s, focusMinutes: m }))}
-                      accent={accent}
-                      limits={companionLimits}
-                      log={focusLog}
-                      track={nowPlaying?.title ?? null}
-                      playing={isPlayingAudio}
-                      sleeps={settings.companionSleeps ?? 'time'}
-                    />
+                    <DeskView tasks={tasks} timer={timer} accent={accent} />
                   )}
                 </motion.div>
               </AnimatePresence>
@@ -500,6 +579,9 @@ export default function HomePage() {
                   limits={companionLimits}
                   privacy={privacy}
                   moment={moment}
+                  weather={weather}
+                  battery={battery}
+                  bluetooth={bluetooth}
                 />
               )
             }

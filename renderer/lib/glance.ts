@@ -12,5 +12,12 @@ export const cardCount = (settings: Settings, aiCards: number) =>
   (settings.showAvatar ? 1 : 0) +
   (settings.showMusic || !settings.showAvatar ? 1 : 0) +
   (settings.showTasks && !settings.showFocus ? 1 : 0) +
+  (settings.showVolume ? 1 : 0) +
+  (settings.showStopwatch ? 1 : 0) +
+  (settings.showClipboard ? 1 : 0) +
+  (settings.showWeather ? 1 : 0) +
+  (settings.showDnd ? 1 : 0) +
+  (settings.showNotifications ? 1 : 0) +
+  (settings.showThermals ? 1 : 0) +
   (settings.showFocus ? 1 : 0) +
   (settings.showAiUsage ? aiCards : 0)
