@@ -10,6 +10,8 @@ This file explains every place deskNotch reaches outside itself into Windows: re
 
 ## Start here: Electron in five minutes
 
+_Two programs, one app: what Electron is, how main and renderer split the work, and what `window.bridge` is._
+
 ### What Electron is
 
 A normal website runs in a browser tab and is not allowed to touch your computer: it cannot read your files, see which apps are open, or run programs. That is on purpose; any website could be malicious.
@@ -108,6 +110,8 @@ Every diagram below uses the same lanes: **Renderer** (the page), **Main** (the 
 ---
 
 ## For engineers: architecture, costs, and why it is built this way
+
+_The process diagram, the idle/active cost budget per feature, the security model, and every design decision with the alternative it beat._
 
 *Start here* is the concept; this is the engineering. Every number below is the one in the code.
 
@@ -210,6 +214,8 @@ The rule it follows: **nothing slow or blocking runs on main's event loop**, bec
 
 ## 1. Media playback
 
+_Reading now-playing from Windows' SMTC list in a worker thread, and controlling it by sending system media keys through a long-lived PowerShell._
+
 > **In plain words:** Windows keeps one list of "what is playing right now" that every music and video app reports to. deskNotch listens to that list to show the song, and presses the keyboard's own media keys (play, next…) to control it, so it works with any player.
 
 Two directions: **reading** what's playing (continuous) and **controlling** it (on click). They use different mechanisms, because the library we read with can only observe.
@@ -296,6 +302,8 @@ Where the code is:
 
 ## 2. Opening the player (tap the album art)
 
+_How the app that is playing is found (Store AUMID vs. classic exe) and brought to the front via `ShowWindow` + `SetForegroundWindow`._
+
 > **In plain words:** Tapping the album art finds the window of the app that is playing (Spotify, Chrome…) and brings it to the front, the same thing clicking it on the taskbar does.
 
 Tapping the art brings the app that's playing to the front, maximised. It relies on the `sourceAppId` that SMTC gave us in 1a.
@@ -332,6 +340,8 @@ Where the code is:
 ---
 
 ## 3. The Shelf tab (Recent and Pinned parked)
+
+_Drop, thumbnail, open, reveal, drag-out: how files enter and leave the Shelf, and how the drag hands the OS the real file._
 
 > **In plain words:** A place to park files. Drop a file on the notch and its path is saved; drag it back out and Windows moves the real file wherever you drop it. Thumbnails come from the same place Explorer gets them.
 
@@ -416,6 +426,8 @@ Where the code is:
 
 ## 4. The notch window itself (click-through)
 
+_Why the strip stays click-through permanently, how the 60ms cursor poll works, and how the notch decides when the pointer has really left._
+
 > **In plain words:** The notch is drawn inside an invisible window as wide as your screen. So that the invisible part never steals your clicks, main checks where the mouse is 16 times a second and only lets the window take the click when you are actually over the notch.
 
 The notch lives in a transparent, frameless, always-on-top window as wide as the screen and 500px tall. Almost all of that window is empty, and it must never swallow a click meant for whatever is underneath.
@@ -444,6 +456,8 @@ sequenceDiagram
 
 ## 5. Screenshot catcher
 
+_`fs.watch` on the Screenshots folder, the size-stable check, and what the Keep / Discard / Drag actions do._
+
 > **In plain words:** Windows saves every screenshot into a folder. deskNotch watches that folder, and when a new picture appears it opens the notch on it so you can drag it somewhere, keep it, or throw it away.
 
 Windows 11's Snipping Tool (Win+Shift+S, Print Screen) saves every capture to `Pictures\Screenshots`. Watching that folder catches them as real files, for the cost of a folder watch: no polling.
@@ -470,6 +484,8 @@ flowchart TD
 - Code: the watcher at [screenshots.ts:46](main/ipc/screenshots.ts#L46), the size check at [screenshots.ts:25](main/ipc/screenshots.ts#L25), the card in [CaptureView.tsx](renderer/components/widgets/CaptureView.tsx), opening and folding in `peek` in [home.tsx](renderer/pages/home.tsx).
 
 ## 6. Status watcher: privacy dots, Wi-Fi, Bluetooth
+
+_One long-lived PowerShell polling ConsentStore (mic/camera), `netsh` (Wi-Fi) and `Get-PnpDevice` (Bluetooth), printing only on change._
 
 > **In plain words:** One small PowerShell script runs in the background and keeps asking Windows three questions: which apps are using the mic or camera, which Wi-Fi am I on, and which Bluetooth devices are connected (and how charged they are). It only speaks up when an answer changes.
 
@@ -518,6 +534,8 @@ Code: [privacy.ts](main/ipc/privacy.ts) (script and watcher), [usePrivacy.ts](re
 
 ## 7. Moments (headphones, Wi-Fi, Bluetooth, mic and camera, battery)
 
+_Transient announcements in the closed bar: where each source comes from (browser `devicechange`, watcher §6, or battery IPC) and how duplicates are suppressed._
+
 > **In plain words:** When something happens, the closed notch shows it for a second and a half, like AirPods on an iPhone. Headphones and the battery are noticed by the browser itself; Wi-Fi, Bluetooth and the mic and camera come from the watcher in §6.
 
 When something happens, the closed bar gives itself to it for about a second and a half: the icon swings in, then the name and a word at the right edge ("Connected", "Microphone", "42%"), then it slides away and the usual bar returns.
@@ -546,6 +564,8 @@ flowchart TD
 Code: [useHeadphones.ts](renderer/hooks/useHeadphones.ts), [useBattery.ts](renderer/hooks/useBattery.ts), the moments in [home.tsx](renderer/pages/home.tsx), the view in [CollapsedStatus.tsx](renderer/components/notch/CollapsedStatus.tsx).
 
 ## 8. Most used and favourite apps
+
+_Reading UserAssist (focus-time tallies, ROT13-encoded), resolving names and icons via a C# helper in PowerShell, and launching via `shell:AppsFolder`._
 
 > **In plain words:** Windows secretly counts how long you use each app (that is where the Start menu's "Most used" comes from). deskNotch reads that count, asks Windows for each app's real name and icon, and launches an app the same way the Start menu does.
 
@@ -580,6 +600,8 @@ sequenceDiagram
 
 ## 9. Smaller touches
 
+_Wallpaper path, accent colour, CPU/GPU/memory usage, the 12-hour clock, and start-on-boot — the one-liners that didn't need their own section._
+
 > **In plain words:** A few small things that also read from Windows: your wallpaper (to tint the glass), your accent colour, and the "start with Windows" switch.
 
 | What | How it talks to Windows | Code |
@@ -597,6 +619,8 @@ sequenceDiagram
 
 ## The one shared piece: the `user32.dll` shim
 
+_`ShowWindow`, `SetForegroundWindow`, and `keybd_event` — declared once in PowerShell's `Add-Type` and shared by media keys and player-focus._
+
 Features 1 and 2 need these Windows functions. They are declared once, as a PowerShell `Add-Type` block, and reused:
 
 ```powershell
@@ -610,6 +634,8 @@ public class W {
 Defined at [main/ipc/media.ts:14](main/ipc/media.ts#L14).
 
 ## Known limits, in one place
+
+_What deskNotch cannot guarantee, and why: focus rules, polling gaps, name-matching, and platform constraints._
 
 - **Focus can be refused.** `SetForegroundWindow` is subject to Windows' focus-stealing rules. When refused, the target flashes on the taskbar. There is no reliable way around this without the target's cooperation.
 - **Media keys go to the "current" player.** With two players open, Windows decides which one, not us.
@@ -629,6 +655,8 @@ Defined at [main/ipc/media.ts:14](main/ipc/media.ts#L14).
 ---
 
 ## Glossary
+
+_Definitions for every term used in this file: Electron, IPC, SMTC, AUMID, UserAssist, ConsentStore, and more._
 
 | Term | Meaning |
 |---|---|

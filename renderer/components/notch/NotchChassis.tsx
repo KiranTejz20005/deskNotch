@@ -167,9 +167,16 @@ export const NotchChassis: React.FC<NotchChassisProps> = ({
   /** Everything that belongs to the notch: itself, the dock, the apps tray, and
    *  any popover marked `data-notch-part` (the favourites picker). */
   const parts = () =>
-    [shellRef.current, railRef.current, belowRef.current, ...Array.from(document.querySelectorAll<HTMLElement>('[data-notch-part]'))].filter(
-      (el): el is HTMLElement => Boolean(el),
-    )
+    [
+      shellRef.current,
+      railBottomRef.current,
+      railLeftRef.current,
+      railRightRef.current,
+      belowBottomRef.current,
+      belowLeftRef.current,
+      belowRightRef.current,
+      ...Array.from(document.querySelectorAll<HTMLElement>('[data-notch-part]')),
+    ].filter((el): el is HTMLElement => Boolean(el))
   const distance = (x: number, y: number) =>
     Math.min(
       ...parts()
@@ -213,8 +220,12 @@ export const NotchChassis: React.FC<NotchChassisProps> = ({
   // whatever is underneath. It gets the notch's rectangle instead and tests
   // the cursor against it.
   const shellRef = useRef<HTMLDivElement>(null)
-  const railRef = useRef<HTMLDivElement>(null)
-  const belowRef = useRef<HTMLDivElement>(null)
+  const railBottomRef = useRef<HTMLDivElement>(null)
+  const railLeftRef = useRef<HTMLDivElement>(null)
+  const railRightRef = useRef<HTMLDivElement>(null)
+  const belowBottomRef = useRef<HTMLDivElement>(null)
+  const belowLeftRef = useRef<HTMLDivElement>(null)
+  const belowRightRef = useRef<HTMLDivElement>(null)
   const mainRef = useRef<HTMLElement>(null)
 
   useEffect(() => {
@@ -246,7 +257,7 @@ export const NotchChassis: React.FC<NotchChassisProps> = ({
       clearTimeout(late)
       clearInterval(tick)
     }
-  }, [isOpen, expandedWidth, expandedHeight])
+  }, [isOpen, expandedWidth, expandedHeight, dockSide, belowSide])
 
   useEffect(() => {
     window.bridge?.send('notch:pinned', isPinned)
@@ -254,23 +265,26 @@ export const NotchChassis: React.FC<NotchChassisProps> = ({
 
   /** The apps tray, in the notch's own surface so the two read as one object:
    *  a short row under the notch, or a column hanging beside it. */
-  const tray = (side: 'left' | 'right' | 'bottom') => (
-    <motion.div
-      key={`tray-${side}`}
-      ref={belowRef}
-      initial={{ opacity: 0, scale: 0.94, ...(side === 'bottom' ? { y: -10 } : { x: side === 'right' ? -10 : 10 }) }}
-      animate={{ opacity: 1, scale: 1, x: 0, y: 0 }}
-      exit={{ opacity: 0, scale: 0.96, transition: { duration: 0.12 } }}
-      transition={{ ...spring, delay: 0.06 }}
-      className={`pointer-events-auto relative isolate border ${side === 'bottom' ? 'rounded-[12px] px-3 py-1' : 'rounded-b-[12px] border-t-0 px-1 pb-1.5 pt-2'} ${
-        notchStyle === 'black' ? 'bg-[#0b0b0d] border-white/[0.07]' : 'border-white/[0.1]'
-      } shadow-[0_18px_50px_-12px_rgba(0,0,0,0.9)]`}
-      style={notchStyle === 'black' ? undefined : { background: CORNER_FILLS[notchStyle] }}
-    >
-      {notchStyle !== 'black' && <Backdrop kind={notchStyle} host={belowRef} />}
-      {below}
-    </motion.div>
-  )
+  const tray = (side: 'left' | 'right' | 'bottom') => {
+    const ref = side === 'left' ? belowLeftRef : side === 'right' ? belowRightRef : belowBottomRef;
+    return (
+      <motion.div
+        key={`tray-${side}`}
+        ref={ref}
+        initial={{ opacity: 0, scale: 0.94, ...(side === 'bottom' ? { y: -10 } : { x: side === 'right' ? -10 : 10 }) }}
+        animate={{ opacity: 1, scale: 1, x: 0, y: 0 }}
+        exit={{ opacity: 0, scale: 0.96, transition: { duration: 0.12 } }}
+        transition={{ ...spring, delay: 0.06 }}
+        className={`pointer-events-auto relative isolate border ${side === 'bottom' ? 'rounded-[12px] px-3 py-1' : 'rounded-b-[12px] border-t-0 px-1 pb-1.5 pt-2'} ${
+          notchStyle === 'black' ? 'bg-[#0b0b0d] border-white/[0.07]' : 'border-white/[0.1]'
+        } shadow-[0_18px_50px_-12px_rgba(0,0,0,0.9)]`}
+        style={notchStyle === 'black' ? undefined : { background: CORNER_FILLS[notchStyle] }}
+      >
+        {notchStyle !== 'black' && <Backdrop kind={notchStyle} host={ref} />}
+        {below}
+      </motion.div>
+    )
+  }
 
   return (
     <motion.div
@@ -370,22 +384,25 @@ export const NotchChassis: React.FC<NotchChassisProps> = ({
           <AnimatePresence>
             {isOpen && rail && dockSide === 'bottom' && (
               <motion.div
-                  ref={railRef}
-                  initial={{ opacity: 0, scale: 0.92, ...(dockSide === 'bottom' ? { y: -10 } : { x: dockSide === 'right' ? -10 : 10 }) }}
+                  key="rail-bottom"
+                  ref={railBottomRef}
+                  initial={{ opacity: 0, scale: 0.92, y: -10 }}
                   animate={{ opacity: 1, scale: 1, x: 0, y: 0 }}
                   exit={{ opacity: 0, scale: 0.94, transition: { duration: 0.12 } }}
                   transition={{ ...spring, delay: 0.04 }}
                   style={{
-                    transformOrigin: dockSide === 'bottom' ? 'top center' : dockSide === 'right' ? 'top left' : 'top right',
+                    transformOrigin: 'top center',
                     ...(notchStyle === 'black' ? {} : { background: CORNER_FILLS[notchStyle] }),
                   }}
-                  className={`pointer-events-auto relative isolate flex items-center gap-[3px] border shadow-[0_12px_30px_-10px_rgba(0,0,0,0.8)] ${
-                    dockSide === 'bottom' ? 'h-[32px] rounded-full px-1' : 'w-[32px] flex-col rounded-b-[16px] border-t-0 px-1 pb-1 pt-1.5'
-                  } ${notchStyle === 'black' ? 'bg-[#0b0b0d] border-white/[0.08]' : 'border-white/[0.1]'}`}
+                  className={`pointer-events-auto relative isolate flex items-center gap-[3px] border shadow-[0_12px_30px_-10px_rgba(0,0,0,0.8)] h-[32px] rounded-full px-1 ${
+                    notchStyle === 'black' ? 'bg-[#0b0b0d] border-white/[0.08]' : 'border-white/[0.1]'
+                  }`}
                 >
-                  {notchStyle !== 'black' && <Backdrop kind={notchStyle} host={railRef} />}
-                {rail}
-                  <div className={dockSide === 'bottom' ? 'mx-0.5 h-3.5 w-px bg-white/[0.1]' : 'my-0.5 h-px w-3.5 bg-white/[0.1]'} />
+                  {notchStyle !== 'black' && <Backdrop kind={notchStyle} host={railBottomRef} />}
+                  <DockSideContext.Provider value="bottom">
+                    {rail}
+                  </DockSideContext.Provider>
+                  <div className="mx-0.5 h-3.5 w-px bg-white/[0.1]" />
                   {/* The lock: pinning is something you can see and do. */}
                   <motion.button
                     type="button"
@@ -402,7 +419,7 @@ export const NotchChassis: React.FC<NotchChassisProps> = ({
                     }`}
                   >
                     {isPinned ? <Lock size={11} strokeWidth={2.2} /> : <LockOpen size={11} strokeWidth={2} />}
-                    <span className={railLabel(dockSide)}>{isPinned ? 'Unlock' : 'Keep open'}</span>
+                    <span className={railLabel('bottom')}>{isPinned ? 'Unlock' : 'Keep open'}</span>
                   </motion.button>
                 </motion.div>
             )}
@@ -416,22 +433,25 @@ export const NotchChassis: React.FC<NotchChassisProps> = ({
             <AnimatePresence>
               {isOpen && rail && dockSide === side && (
                 <motion.div
-                ref={railRef}
-                initial={{ opacity: 0, scale: 0.92, x: dockSide === 'right' ? -10 : 10 }}
+                key={`rail-${side}`}
+                ref={side === 'left' ? railLeftRef : railRightRef}
+                initial={{ opacity: 0, scale: 0.92, x: side === 'right' ? -10 : 10 }}
                 animate={{ opacity: 1, scale: 1, x: 0, y: 0 }}
                 exit={{ opacity: 0, scale: 0.94, transition: { duration: 0.12 } }}
                 transition={{ ...spring, delay: 0.04 }}
                 style={{
-                  transformOrigin: dockSide === 'right' ? 'top left' : 'top right',
+                  transformOrigin: side === 'right' ? 'top left' : 'top right',
                   ...(notchStyle === 'black' ? {} : { background: CORNER_FILLS[notchStyle] }),
                 }}
-                className={`pointer-events-auto relative isolate flex items-center gap-[3px] border shadow-[0_12px_30px_-10px_rgba(0,0,0,0.8)] ${
-                  'w-[32px] flex-col rounded-b-[16px] border-t-0 px-1 pb-1 pt-1.5'
-                } ${notchStyle === 'black' ? 'bg-[#0b0b0d] border-white/[0.08]' : 'border-white/[0.1]'}`}
+                className={`pointer-events-auto relative isolate flex flex-col items-center gap-[3px] border shadow-[0_12px_30px_-10px_rgba(0,0,0,0.8)] w-[32px] rounded-b-[16px] border-t-0 px-1 pb-1 pt-1.5 ${
+                  notchStyle === 'black' ? 'bg-[#0b0b0d] border-white/[0.08]' : 'border-white/[0.1]'
+                }`}
               >
-                {notchStyle !== 'black' && <Backdrop kind={notchStyle} host={railRef} />}
-                {rail}
-                <div className={'my-0.5 h-px w-3.5 bg-white/[0.1]'} />
+                {notchStyle !== 'black' && <Backdrop kind={notchStyle} host={side === 'left' ? railLeftRef : railRightRef} />}
+                <DockSideContext.Provider value={side}>
+                  {rail}
+                </DockSideContext.Provider>
+                <div className="my-0.5 h-px w-3.5 bg-white/[0.1]" />
                 {/* The lock: pinning is something you can see and do. */}
                 <motion.button
                   type="button"
@@ -448,7 +468,7 @@ export const NotchChassis: React.FC<NotchChassisProps> = ({
                   }`}
                 >
                   {isPinned ? <Lock size={11} strokeWidth={2.2} /> : <LockOpen size={11} strokeWidth={2} />}
-                  <span className={railLabel(dockSide)}>{isPinned ? 'Unlock' : 'Keep open'}</span>
+                  <span className={railLabel(side)}>{isPinned ? 'Unlock' : 'Keep open'}</span>
                 </motion.button>
               </motion.div>
               )}

@@ -319,7 +319,6 @@ export default function HomePage() {
   const isPlayingAudio = Boolean(nowPlaying?.isPlaying)
   // The style only changes the background: the glow follows the album (when
   // that setting is on) and the readings stay white, whatever the material.
-  const tint = isPlayingAudio && settings.albumTint ? albumTint : '255, 255, 255'
   const orbTint = '255, 255, 255'
 
   const shownLimits = settings.showAiUsage || nothingChosen ? visibleLimits(aiLimits, settings.hiddenLimits) : []

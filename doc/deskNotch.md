@@ -8,6 +8,8 @@ have to be re-derived later. How each feature talks to Windows is in
 
 ## 1. Why the notch lives in the renderer, not the main process
 
+_Why the notch is a `<div>` inside a full-width invisible window instead of a small `BrowserWindow`, and what that costs._
+
 ### The change
 
 The window used to *be* the notch: a 240×30 `BrowserWindow`, positioned at the
@@ -74,6 +76,8 @@ all. Without it the notch is permanently dead.
 
 ## 2. `setAlwaysOnTop(flag, level)`
 
+_The window-level ladder Electron exposes, why `screen-saver` is used, and why it does not help against exclusive-fullscreen games._
+
 ### The levels
 
 Lowest to highest:
@@ -109,6 +113,8 @@ different approach, not a higher level.
 
 ## 3. Main, renderer, and talking between them
 
+_How the two Electron processes are split, what `main/preload.ts` is, where `window.bridge` comes from, and the three messaging patterns every hook in the renderer uses._
+
 ### Two processes
 
 Electron runs two separate OS processes, and most confusion here comes from
@@ -136,31 +142,59 @@ would let any script loaded there read the disk.
 
 ### The preload bridge
 
-The renderer sometimes needs the main process to do something for it, without
-being handed everything. That is what `main/preload.ts` is for: it runs before
-the renderer and can see both sides.
+`main/preload.ts` is the only file that can see both sides. It runs in the
+renderer's process but before the page loads, so it has access to `ipcRenderer`
+(a Node API) while the page itself does not.
+
+It uses `contextBridge.exposeInMainWorld` to put a controlled object on
+`window.bridge`:
 
 ```ts
 // main/preload.ts
-contextBridge.exposeInMainWorld('ipc', handler)
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
+
+const handler = {
+  send<T>(channel: string, value?: T) {
+    ipcRenderer.send(channel, value)
+  },
+  invoke<T>(channel: string, ...args: unknown[]): Promise<T> {
+    return ipcRenderer.invoke(channel, ...args)
+  },
+  on<T>(channel: string, callback: (...args: T[]) => void) {
+    const subscription = (_event, ...args: T[]) => callback(...args)
+    ipcRenderer.on(channel, subscription)
+    return () => ipcRenderer.removeListener(channel, subscription)
+  },
+  pathOf(file: File) {
+    return webUtils.getPathForFile(file)
+  },
+}
+
+contextBridge.exposeInMainWorld('bridge', handler)
 ```
 
-(In this codebase the name is `bridge`: `window.bridge`, with `send`, `invoke`, `on`
-and `pathOf`, the last for the real path of a dropped file.)
+This puts `window.bridge` in the renderer. The renderer gets exactly these
+four methods and nothing else — no raw `ipcRenderer`, no `fs`:
 
-This puts `window.ipc` in the renderer, exposing only what `handler` contains —
-not `ipcRenderer` itself, and not `fs`. Whatever is added there is the entire
-surface the renderer gets.
+| Method | Direction | Use |
+|---|---|---|
+| `window.bridge.send(channel, value)` | renderer → main | fire-and-forget |
+| `window.bridge.invoke(channel, ...args)` | renderer → main | ask, wait for answer |
+| `window.bridge.on(channel, fn)` | main → renderer | subscribe to pushes; **returns an unsubscribe function** |
+| `window.bridge.pathOf(file)` | renderer only | real disk path of a dropped `File` |
 
-### One-way: `send` / `on`
+`window.bridge` is typed via `renderer/preload.d.ts`, so TypeScript knows its
+shape everywhere in the renderer without importing anything.
 
-Fire a message, expect nothing back. The hover handling already in this codebase
-works this way — the renderer cannot call `setIgnoreMouseEvents` itself, because
-that is a window API and windows live in main.
+### One-way: `send`
+
+Fire a message, expect nothing back. The hover handling works this way —
+the renderer cannot call `setIgnoreMouseEvents` itself, because that is a
+window API and windows live in main.
 
 ```ts
 // renderer — NotchChassis.tsx
-window.ipc?.send('notch:hover', over)
+window.bridge?.send('notch:hover', over)
 
 // main — main.ts
 ipcMain.on('notch:hover', (_event, isOver: boolean) => {
@@ -177,28 +211,81 @@ return value resolves it.
 
 ```ts
 // renderer
-const battery = await window.ipc.invoke('battery:get')
+const battery = await window.bridge.invoke('battery:get')
 
-// main
+// main — main/ipc/battery.ts
 ipcMain.handle('battery:get', async () => {
   return { level: 80, charging: true }
 })
 ```
 
-All three are exposed by the preload. Anything not listed in that handler is
-unavailable to the renderer, so a new pattern means adding it there first.
+### Main pushes to the renderer: `webContents.send` + `bridge.on`
+
+Main can also push data without being asked. The renderer subscribes with
+`window.bridge.on` and main fires with `webContents.send`. This is how live
+state — mic/camera activity, battery changes, now-playing — reaches the page
+without polling.
+
+```ts
+// main — fire whenever something changes
+mainWindow.webContents.send('privacy:state', newState)
+
+// renderer — subscribe once, stay in sync
+window.bridge.on('privacy:state', (state) => setState(state))
+```
+
+### End-to-end example: `usePrivacy`
+
+`renderer/hooks/usePrivacy.ts` uses both patterns in one hook and is a good
+template for any feature that has live state:
+
+```ts
+export function usePrivacy() {
+  const [state, setState] = useState<PrivacyState>({ ... })
+
+  useEffect(() => {
+    // 1. Subscribe to future pushes (main/ipc/privacy.ts → webContents.send → bridge.on)
+    const unsubscribe = window.bridge?.on<PrivacyState>('privacy:state', setState)
+
+    // 2. Ask for the current state right now (bridge.invoke → ipcMain.handle)
+    window.bridge
+      ?.invoke<PrivacyState>('privacy:get')
+      .then(setState)
+      .catch(() => {})
+
+    return () => unsubscribe?.()  // ← clean up the ipcRenderer listener on unmount
+  }, [])
+
+  return state
+}
+```
+
+**Step 1** (`bridge.on`) wires up a listener so the hook re-renders whenever
+`main/ipc/privacy.ts` calls `webContents.send('privacy:state', …)` — for
+example, each time the PowerShell that polls ConsentStore reports a mic or
+camera change.
+
+**Step 2** (`bridge.invoke`) fetches the current snapshot immediately so the
+hook does not show empty state until the first push arrives. The two together
+are the standard pattern for any hook that mirrors live main-process data.
+
+The `unsubscribe` returned by `bridge.on` must be called on unmount. Skipping
+it leaks an `ipcRenderer` listener every time the component remounts.
 
 ### Which one to reach for
 
 | Need | Pattern |
 |---|---|
-| Tell main to do something | `send` / `on` |
-| Ask main for a value | `invoke` / `handle` |
-| Main pushes an update to the renderer | `webContents.send` / `on` |
+| Tell main to do something | `bridge.send` / `ipcMain.on` |
+| Ask main for a value | `bridge.invoke` / `ipcMain.handle` |
+| Main pushes an update to the renderer | `webContents.send` / `bridge.on` |
+| Subscribe + initial fetch (most hooks) | `bridge.on` + `bridge.invoke` together |
 
 ---
 
 ## 4. Why SMTC runs in a worker thread
+
+_Why the media monitor can't run on the main thread, how the worker ↔ main message protocol works, and why the worker file isn't bundled by webpack._
 
 `SMTCMonitor` blocks whatever thread it runs on. The main thread owns the
 window, so blocking it freezes the notch — and the renderer with it, since its
@@ -295,6 +382,8 @@ properties, no namespaces.
 
 ## 5. Hit testing, because the window is not the notch
 
+_Why click-through can't just be toggled on hover, how the cursor is polled against the notch's rectangle every 60ms, and why closing on `mouseleave` was unreliable._
+
 The strip spans the whole width of the screen, so what it does with clicks
 matters more than it would for an ordinary window.
 
@@ -341,6 +430,8 @@ only time there is anything to type into.
 
 ## 6. Views
 
+_How Glance, Desk, Shelf and Settings are structured, how the dock sits around the notch, and how temporary "peek" moments (screenshot, focus done) borrow the notch without a full view switch._
+
 Everything cannot share one row. Music, tasks, a photo and settings would each
 be a sliver.
 
@@ -375,6 +466,8 @@ the moment either changes.
 
 ## 6b. Around the notch: the dock and the apps tray
 
+_The one-side-each rule that keeps the dock and the apps bar from colliding, and how both surfaces are included in hit testing._
+
 Two things can sit outside the notch: the dock of tabs and the apps tray. One
 rule keeps it tidy: **they never share a side.** Under the notch they stack in
 one column, the tray against the notch and the dock below it; beside it they
@@ -389,6 +482,8 @@ for hit testing and for "has the pointer left?", through the `data-notch-part`
 attribute and a re-check every 250 ms while open.
 
 ## 6c. Materials
+
+_Why the three styles (Default, Mica, Glass) are drawn in the renderer rather than handled by the OS, and what Glass costs._
 
 The window is transparent, but Electron cannot blur what is behind part of a
 window, and Windows' own acrylic covers the whole window (here, the whole top
@@ -407,6 +502,8 @@ Only the background changes with the style; readings, tints and accents keep
 their own colours.
 
 ## 7. Where main-process code lives
+
+_A map of every file in `main/` and `main/ipc/`, what each one owns, and the rule for adding a new handler._
 
 ```
 main/
@@ -439,6 +536,8 @@ else is touched, and no file grows because a feature had nowhere else to go.
 ---
 
 ## Quick reference
+
+_Where to find the code for the most common edits, and two known gotchas._
 
 - **Notch appearance and animation** → `renderer/components/notch/NotchChassis.tsx`, hot-reloads.
 - **Now playing** → `main/smtc-worker.ts` (worker), `main/smtc.ts` (main),

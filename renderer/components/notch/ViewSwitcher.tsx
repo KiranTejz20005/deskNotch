@@ -53,7 +53,7 @@ export const RailButton: React.FC<{
       active ? 'text-black' : 'text-white/45 hover:bg-white/[0.1] hover:text-white'
     }`}
   >
-    {active && <motion.span layoutId={layoutId} transition={spring} className="absolute inset-0 rounded-full bg-white" />}
+    {active && <motion.span layoutId={layoutId ? `${layoutId}-${side}` : undefined} transition={spring} className="absolute inset-0 rounded-full bg-white" />}
     <span className="relative">{children}</span>
     <span className={railLabel(side)}>{label}</span>
   </motion.button>
