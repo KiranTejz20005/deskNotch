@@ -175,11 +175,13 @@ export const nameOf = async (key: string) => {
 export const warmNames = () => void allApps()
 
 export function registerAppsIpc() {
-  // Pre-warm app cache in the background on startup for instant response
+  // Pre-warm the app cache in the background, after start-up has settled:
+  // two PowerShells (one compiling C#) at launch alongside the others made the
+  // first seconds stutter. An earlier ask (the apps bar opened) runs them anyway.
   setTimeout(() => {
     void allApps()
     void topApps()
-  }, 500)
+  }, 8000)
 
   ipcMain.handle('apps:top', () => topApps())
   ipcMain.handle('apps:all', () => allApps())

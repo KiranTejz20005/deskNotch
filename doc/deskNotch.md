@@ -1,4 +1,4 @@
-# deskNotch — design notes
+# DeskNotch — design notes
 
 Notes on the decisions that shape this codebase, written down so they don't
 have to be re-derived later. How each feature talks to Windows is in
@@ -91,7 +91,7 @@ Lowest to highest:
 | `main-menu` | Above modal panels — the level of the system menu bar. |
 | `status` | Above the main menu — status-bar items. |
 | `pop-up-menu` | Above status items — open dropdown menus. |
-| `screen-saver` | The top of the stack. What deskNotch uses. |
+| `screen-saver` | The top of the stack. What DeskNotch uses. |
 
 A third argument, `relativeLevel`, shifts a window N levels above the one named.
 macOS only.

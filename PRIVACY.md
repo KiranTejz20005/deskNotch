@@ -1,0 +1,41 @@
+# DeskNotch Privacy Policy
+
+_Last updated: 29 September 2026_
+
+DeskNotch is a Windows app that shows a notch at the top of your screen. It has no account, no analytics, no advertising and no server of its own. This page explains what it reads, what it keeps, and what, if anything, leaves your PC.
+
+## What stays on your PC
+
+DeskNotch reads the following from Windows to show them in the notch. None of it is sent anywhere.
+
+- **Media playing**: the title, artist and artwork of what is playing, so you can see and control it.
+- **Microphone and camera in use**: which apps are currently using them, read from Windows' own privacy records. DeskNotch never accesses your microphone or camera itself, and never records audio or video.
+- **Wi-Fi and Bluetooth**: the name of the network you are connected to, and the names and battery levels of connected Bluetooth devices.
+- **Battery, CPU, GPU and memory use.**
+- **Screenshots**: new images in your Screenshots folder, so the notch can offer them to you. Renaming or discarding one only happens when you ask.
+- **Your most used apps**, from Windows' own list, for the apps bar.
+- **Screen time**, if you have the separate app DeskTime installed: DeskNotch reads today's total from DeskTime's local database.
+- **Glass style**: a live image of the screen area behind the notch, used only to draw the blur. It is processed in memory and never saved or sent.
+
+## What DeskNotch saves
+
+Your settings, tasks, reminders, focus history, the files you put on the Shelf (as file paths) and, if you choose one, your companion photo, are saved in a file on your PC. Uninstalling DeskNotch removes the app; you can delete this file at any time.
+
+## What leaves your PC
+
+- **AI usage (optional)**: if you use Claude Code or Codex on the same PC, DeskNotch reads the sign-in those tools already keep and sends it only to their own providers, Anthropic (`api.anthropic.com`) and OpenAI (`chatgpt.com`), to fetch how much of your usage limit is used. It is never sent anywhere else. You can turn AI usage off in Settings.
+- **Updates**: the version downloaded from GitHub checks GitHub Releases for new versions. The Microsoft Store version is updated by the Microsoft Store. As with any web request, GitHub or Microsoft can see your IP address.
+
+Links you choose to open (for example "Get DeskTime") open in your web browser.
+
+## Children
+
+DeskNotch does not knowingly collect any information from anyone, including children.
+
+## Changes
+
+If this policy changes, the new version will be published at this address with a new date.
+
+## Contact
+
+Questions or concerns: [open an issue on GitHub](https://github.com/yashsrivasta7a/deskNotch/issues).

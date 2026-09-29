@@ -57,14 +57,13 @@ const request = (type: string, args?: unknown[]): Promise<unknown> => {
   })
 }
 
-export function startSmtc(window: BrowserWindow) {
+export function startSmtc() {
   // Resolves to app/ at runtime, where the worker is copied alongside main.js.
   // import.meta.dirname rather than __dirname: the bundle is an ES module.
   worker = new Worker(path.join(import.meta.dirname, 'smtc-worker.js'))
 
   const push = () => {
-    if (window.isDestroyed()) return
-    window.webContents.send('smtc:now-playing', current)
+    for (const window of BrowserWindow.getAllWindows()) window.webContents.send('smtc:now-playing', current)
   }
 
   const refresh = async () => {

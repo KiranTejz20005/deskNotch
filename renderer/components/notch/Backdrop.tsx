@@ -1,16 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react'
 
 /**
- * What a surface shows through, for the two material styles. Used by the
- * notch, the tabs dock and the apps tray, so they read as one material.
- *
- * - **Mica**: the wallpaper, heavily blurred and darkened, lined up with where
- *   the surface sits on screen, the way Windows 11's own Mica material works.
- *   Costs nothing: one image, read once.
- * - **Glass**: a live view of the screen behind, blurred. The window is
- *   excluded from capture (see `glass:protect` in main/ipc/system.ts), so the
- *   capture shows what is underneath. One capture at 15 fps is shared by every
- *   surface, and runs while this style is on.
+ * What a surface shows through under the Glass style: a live view of the
+ * screen behind, blurred. Used by the notch, the tabs dock and the apps tray,
+ * so they read as one material. The window is excluded from capture (see
+ * `glass:protect` in main/ipc/system.ts), so the capture shows what is
+ * underneath. One capture at 15 fps is shared by every surface, and runs
+ * while this style is on.
  *
  * Each layer is sized to the whole display and shifted by its surface's own
  * position, so every surface acts as a window onto the right part of the
@@ -55,24 +51,13 @@ const release = () => {
 
 // ── The layer ───────────────────────────────────────────────────────────────
 
-export const Backdrop: React.FC<{ kind: 'mica' | 'glass'; host: React.RefObject<HTMLElement | null> }> = ({ kind, host }) => {
+export const Backdrop: React.FC<{ kind: 'glass'; host: React.RefObject<HTMLElement | null> }> = ({ kind, host }) => {
   const layer = useRef<HTMLDivElement>(null)
   const video = useRef<HTMLVideoElement>(null)
-  const [wallpaper, setWallpaper] = useState<string | null>(null)
   const [live, setLive] = useState(false)
 
-  // Mica: the wallpaper, once.
+  // Join the shared capture while mounted.
   useEffect(() => {
-    if (kind !== 'mica' || wallpaper) return
-    window.bridge
-      ?.invoke<string | null>('system:wallpaper')
-      .then(setWallpaper)
-      .catch(() => {})
-  }, [kind, wallpaper])
-
-  // Glass: join the shared capture while mounted.
-  useEffect(() => {
-    if (kind !== 'glass') return
     let cancelled = false
     void acquire().then((stream) => {
       if (cancelled || !stream || !video.current) return
@@ -101,7 +86,9 @@ export const Backdrop: React.FC<{ kind: 'mica' | 'glass'; host: React.RefObject<
         const isSmall = Math.min(box.width, box.height) < 60
         if (isSmall !== small && video.current) {
           small = isSmall
-          video.current.style.filter = isSmall ? 'blur(6px) saturate(1.8) brightness(1.2)' : 'blur(14px) saturate(1.9) brightness(1.08)'
+          // Dimmed a touch rather than brightened: a brighter copy of the
+          // background is exactly what made the notch vanish into it.
+          video.current.style.filter = isSmall ? 'blur(8px) saturate(1.5) brightness(0.85)' : 'blur(16px) saturate(1.6) brightness(0.85)'
         }
       }
       frame = requestAnimationFrame(follow)
@@ -113,35 +100,27 @@ export const Backdrop: React.FC<{ kind: 'mica' | 'glass'; host: React.RefObject<
   return (
     <div aria-hidden className="pointer-events-none absolute inset-0 -z-10 overflow-hidden" style={{ borderRadius: 'inherit' }}>
       <div ref={layer} className="absolute left-0 top-0 origin-top-left">
-        {kind === 'mica' && wallpaper && (
-          <div
-            className="absolute inset-0"
-            style={{ backgroundImage: `url(${wallpaper})`, backgroundSize: 'cover', backgroundPosition: 'center', filter: 'blur(48px) saturate(1.4)' }}
-          />
-        )}
-        {kind === 'glass' && (
-          <video
-            ref={video}
-            muted
-            playsInline
-            onPlaying={() => setLive(true)}
-            className="absolute inset-0 h-full w-full object-fill transition-opacity duration-300"
-            style={{ opacity: live ? 1 : 0 }}
-          />
-        )}
+        <video
+          ref={video}
+          muted
+          playsInline
+          onPlaying={() => setLive(true)}
+          className="absolute inset-0 h-full w-full object-fill transition-opacity duration-300"
+          style={{ opacity: live ? 1 : 0 }}
+        />
       </div>
-      {/* The tint that keeps text readable over anything. Mica is dark and even;
-          Glass stays clear, darker only toward the bottom where most text sits. */}
+      {/* A smoked tint, so the glass reads as a surface over anything and its
+          text stays legible, darker toward the bottom where most text sits. */}
+      <div className="absolute inset-0" style={{ background: 'linear-gradient(180deg, rgba(8, 8, 12, 0.34) 0%, rgba(8, 8, 12, 0.5) 100%)' }} />
+      {/* A hairline catching the light on the sides and bottom, where the glass
+          ends; none on top, which meets the screen's edge. */}
       <div
         className="absolute inset-0"
         style={{
-          background:
-            kind === 'mica'
-              ? 'rgba(12, 12, 16, 0.55)'
-              : 'linear-gradient(180deg, rgba(8, 8, 12, 0.12) 0%, rgba(8, 8, 12, 0.26) 100%)',
+          borderRadius: 'inherit',
+          boxShadow: 'inset 1px 0 0 rgba(255,255,255,0.16), inset -1px 0 0 rgba(255,255,255,0.16), inset 0 -1px 0 rgba(255,255,255,0.2)',
         }}
       />
-
     </div>
   )
 }

@@ -11,6 +11,7 @@ import { registerAppsIpc } from './apps'
 import { registerUsageIpc } from './usage'
 import { registerBatteryIpc } from './battery'
 import { registerDisplayIpc } from './display'
+import { registerDesktimeIpc } from './desktime'
 
 export function registerIpc() {
   registerStoreIpc()
@@ -25,5 +26,6 @@ export function registerIpc() {
   registerUsageIpc()
   registerBatteryIpc()
   registerDisplayIpc()
+  registerDesktimeIpc()
 }
 

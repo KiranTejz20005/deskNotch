@@ -1,6 +1,6 @@
-# How deskNotch talks to Windows
+# How DeskNotch talks to Windows
 
-This file explains every place deskNotch reaches outside itself into Windows: reading what music is playing, noticing a screenshot, seeing that the microphone is on, and so on. Settings and tasks are left out; they are just a JSON file on disk.
+This file explains every place DeskNotch reaches outside itself into Windows: reading what music is playing, noticing a screenshot, seeing that the microphone is on, and so on. Settings and tasks are left out; they are just a JSON file on disk.
 
 **New to Electron?** Read *Start here* first. **Already know it?** Skip to *For engineers*: the architecture, the cost of every background task, the security model, and every design decision with the alternative it beat. It explains, from zero, the ideas every section below relies on. Each numbered section then opens with a short **In plain words** summary before the details, so you can read just those on a first pass.
 
@@ -22,7 +22,7 @@ A normal website runs in a browser tab and is not allowed to touch your computer
 
 Think of a restaurant.
 
-| | Restaurant | deskNotch | Folder |
+| | Restaurant | DeskNotch | Folder |
 |---|---|---|---|
 | **Renderer** | The dining room: what guests see. Waiters take orders but never cook. | The notch you see: React components, animations, buttons. It is a browser tab, so it **cannot** touch Windows. | [renderer/](renderer/) |
 | **Main** | The kitchen: guests never see it, but it can use the stove, the knives, the fridge. | A Node.js program with full access: files, the registry, running PowerShell, the window itself. | [main/](main/) |
@@ -62,7 +62,7 @@ That is the whole pattern. Every feature below is some version of **the page ask
 
 ### How main actually talks to Windows
 
-Main is Node.js, which can already read files and start programs. For the rest, deskNotch uses four tools, and **no native modules** (no C++ code that has to be compiled against Electron):
+Main is Node.js, which can already read files and start programs. For the rest, DeskNotch uses four tools, and **no native modules** (no C++ code that has to be compiled against Electron):
 
 1. **Electron's own APIs**, which wrap Windows for you: `shell.openPath` (open a file with its app), `shell.trashItem` (Recycle Bin), `nativeImage` (thumbnails), `setIgnoreMouseEvents` (click-through).
 2. **Node's `fs`**, for files and folders, including `fs.watch`, which Windows backs with a real "tell me when this folder changes" API.
@@ -163,6 +163,8 @@ The rule it follows: **nothing slow or blocking runs on main's event loop**, bec
 | Glass style | only while Glass is on | one 15 fps screen capture shared by every surface, then a CSS blur; stops when you switch style | [Backdrop.tsx](renderer/components/notch/Backdrop.tsx) |
 | AI limits | every 2 min while shown, min gap 60 s | one HTTPS call per provider; 5 min back-off after a failure | [limits.ts](main/ipc/limits.ts) |
 | Most used apps | once per 30 min | `reg query` + one PowerShell with a C# icon helper, ~2 to 4 s cold, then cached | [apps.ts](main/ipc/apps.ts) |
+| Foreground watch | 300 ms, only while Hide in fullscreen or Shrink over browsers is on; started 2 s after launch | one long-lived PowerShell with a C# helper: foreground window's monitor, fullscreen flag (covers the monitor and not `IsZoomed`) and process name; silent unless changed. Drives Hide in fullscreen and Shrink over browsers | [fullscreen.ts](main/fullscreen.ts) |
+| Screen time | every 60 s, only while picked | read-only open of DeskTime's SQLite (`%APPDATA%\DeskTime\desktime.db`) via Node's built-in `node:sqlite`, DeskTime's own "today" sum | [desktime.ts](main/ipc/desktime.ts) |
 | Usage page | every 2 s, only while the card is flipped to it | `os.cpus()` on request; one long-lived PowerShell reading the GPU perf counter (~1 s a sample, ~3 s the first time), killed 6 s after the last ask | [usage.ts](main/ipc/usage.ts) |
 
 ### Security model
@@ -216,7 +218,7 @@ The rule it follows: **nothing slow or blocking runs on main's event loop**, bec
 
 _Reading now-playing from Windows' SMTC list in a worker thread, and controlling it by sending system media keys through a long-lived PowerShell._
 
-> **In plain words:** Windows keeps one list of "what is playing right now" that every music and video app reports to. deskNotch listens to that list to show the song, and presses the keyboard's own media keys (play, next…) to control it, so it works with any player.
+> **In plain words:** Windows keeps one list of "what is playing right now" that every music and video app reports to. DeskNotch listens to that list to show the song, and presses the keyboard's own media keys (play, next…) to control it, so it works with any player.
 
 Two directions: **reading** what's playing (continuous) and **controlling** it (on click). They use different mechanisms, because the library we read with can only observe.
 
@@ -458,7 +460,7 @@ sequenceDiagram
 
 _`fs.watch` on the Screenshots folder, the size-stable check, and what the Keep / Discard / Drag actions do._
 
-> **In plain words:** Windows saves every screenshot into a folder. deskNotch watches that folder, and when a new picture appears it opens the notch on it so you can drag it somewhere, keep it, or throw it away.
+> **In plain words:** Windows saves every screenshot into a folder. DeskNotch watches that folder, and when a new picture appears it opens the notch on it so you can drag it somewhere, keep it, or throw it away.
 
 Windows 11's Snipping Tool (Win+Shift+S, Print Screen) saves every capture to `Pictures\Screenshots`. Watching that folder catches them as real files, for the cost of a folder watch: no polling.
 
@@ -567,7 +569,7 @@ Code: [useHeadphones.ts](renderer/hooks/useHeadphones.ts), [useBattery.ts](rende
 
 _Reading UserAssist (focus-time tallies, ROT13-encoded), resolving names and icons via a C# helper in PowerShell, and launching via `shell:AppsFolder`._
 
-> **In plain words:** Windows secretly counts how long you use each app (that is where the Start menu's "Most used" comes from). deskNotch reads that count, asks Windows for each app's real name and icon, and launches an app the same way the Start menu does.
+> **In plain words:** Windows secretly counts how long you use each app (that is where the Start menu's "Most used" comes from). DeskNotch reads that count, asks Windows for each app's real name and icon, and launches an app the same way the Start menu does.
 
 **Most used** is Windows' own count. Explorer keeps a tally per app under `UserAssist` (the Start menu's "Most used" is built from it). Each value's name is the app, **ROT13-encoded**, and its 72-byte data holds the launch count (bytes 4–7) and **time in focus in ms** (bytes 12–15).
 
@@ -635,7 +637,7 @@ Defined at [main/ipc/media.ts:14](main/ipc/media.ts#L14).
 
 ## Known limits, in one place
 
-_What deskNotch cannot guarantee, and why: focus rules, polling gaps, name-matching, and platform constraints._
+_What DeskNotch cannot guarantee, and why: focus rules, polling gaps, name-matching, and platform constraints._
 
 - **Focus can be refused.** `SetForegroundWindow` is subject to Windows' focus-stealing rules. When refused, the target flashes on the taskbar. There is no reliable way around this without the target's cooperation.
 - **Media keys go to the "current" player.** With two players open, Windows decides which one, not us.
@@ -679,7 +681,7 @@ _Definitions for every term used in this file: Electron, IPC, SMTC, AUMID, UserA
 | **UserAssist** | A registry key where Explorer counts how often, and how long, you use each app. |
 | **ConsentStore** | The registry record of which apps used the microphone or camera, and when. |
 | **ROT13** | A trivial letter shift (A↔N, B↔O…) Windows uses to scramble UserAssist names. |
-| **Native module** | Compiled C/C++ code loaded by Node; powerful but has to be rebuilt for each Electron version. deskNotch uses none. |
+| **Native module** | Compiled C/C++ code loaded by Node; powerful but has to be rebuilt for each Electron version. DeskNotch uses none. |
 | **Worker thread** | A second JavaScript thread in main, so slow work (media) never freezes the notch. |
 | **Click-through** | A window that lets mouse clicks pass to whatever is underneath it. |
 | **Hit test** | Checking whether the mouse is over the notch, to decide who gets the click. |

@@ -1,27 +1,30 @@
 import React, { useEffect, useRef, useState } from 'react'
 import Head from 'next/head'
 import { AnimatePresence, motion } from 'motion/react'
-import { Inbox, LampDesk, LayoutGrid, Settings2 } from 'lucide-react'
+import { FolderOpen, LayoutGrid, ListTodo, Settings as Cog } from 'lucide-react'
 import { NotchChassis, CHROME_X, CHROME_Y, PAD } from '../components/notch/NotchChassis'
 import { AmbientVideo } from '../components/notch/AmbientVideo'
 import { CollapsedStatus, type Moment } from '../components/notch/CollapsedStatus'
 import { ViewRail, RailButton, type ViewDefinition } from '../components/notch/ViewSwitcher'
-import { SettingsPanel, DEFAULT_SETTINGS, SETTINGS_PANE, type Settings } from '../components/widgets/SettingsPanel'
+import { SettingsPanel, DEFAULT_SETTINGS, DOCK_SCALE, SETTINGS_PANE, type Settings } from '../components/widgets/SettingsPanel'
 import { DeskView, DESK_WIDTH, DESK_HEIGHT } from '../components/widgets/DeskView'
 import { AppsRow } from '../components/widgets/AppsRow'
 import { useFocusLog } from '../hooks/useFocusLog'
 import { FileStrip, SHELF_HEIGHT, shelfWidth } from '../components/widgets/FileStrip'
 import { CaptureView, CAPTURE_HEIGHT, CAPTURE_WIDTH } from '../components/widgets/CaptureView'
 import { DoneView, DONE_HEIGHT, DONE_WIDTH } from '../components/widgets/DoneView'
+import { ReminderView, REMINDER_HEIGHT, REMINDER_WIDTH } from '../components/widgets/ReminderView'
+import { useReminders, type Reminder } from '../hooks/useReminders'
 import type { FileItem } from '../hooks/useFiles'
 import { botAvatarPalette } from 'bot-avatars'
-import { CompanionTile, COMPANION_WIDTH, COMPANION_OPEN_WIDTH, COMPANION_TIME_WIDTH, type CompanionMode } from '../components/widgets/CompanionTile'
+import { CompanionTile, COMPANION_WIDTH, COMPANION_OPEN_WIDTH, COMPANION_REMINDER_WIDTH, COMPANION_TIME_WIDTH, type CompanionMode } from '../components/widgets/CompanionTile'
 import { MediaTile, TimeTile, TaskTile, MEDIA_WIDTH, TIME_WIDTH, TASK_WIDTH } from '../components/widgets/GlanceTiles'
 import { FocusTile, FOCUS_WIDTH } from '../components/widgets/FocusTile'
 import { StatusTile, STATUS_WIDTH, statusShown, type StatusPage } from '../components/widgets/StatusTile'
 import { AiOrbs, providerWidth, visibleLimits } from '../components/widgets/AiOrbs'
 import { AloneContext, TILE, TILE_GAP } from '../components/ui/tile'
 import { MAX_CARDS } from '../lib/glance'
+import { onStoreChange } from '../lib/store'
 import { usePhoto } from '../hooks/usePhoto'
 import { useNowPlaying } from '../hooks/useNowPlaying'
 import { useDominantColor } from '../hooks/useDominantColor'
@@ -32,13 +35,14 @@ import { useAiLimits } from '../hooks/useAiLimits'
 import { usePrivacy } from '../hooks/usePrivacy'
 import { useHeadphones } from '../hooks/useHeadphones'
 import { useBattery } from '../hooks/useBattery'
+import { useScreenTime } from '../hooks/useScreenTime'
 
 /** The places to go, as circles on the dock. Settings is a control, not a
  *  place, so it sits after them with the lock. */
 const VIEWS: ViewDefinition[] = [
-  { id: 'glance', label: 'Glance', icon: <LayoutGrid size={12} strokeWidth={2.2} /> },
-  { id: 'desk', label: 'Desk', icon: <LampDesk size={12} strokeWidth={2.2} /> },
-  { id: 'files', label: 'Shelf', icon: <Inbox size={12} strokeWidth={2.2} /> },
+  { id: 'glance', label: 'Home', icon: <LayoutGrid size={12} strokeWidth={2.2} /> },
+  { id: 'desk', label: 'Focus & tasks', icon: <ListTodo size={12} strokeWidth={2.2} /> },
+  { id: 'files', label: 'Files', icon: <FolderOpen size={12} strokeWidth={2.2} /> },
 ]
 
 /** Each view sets the shell it needs; the notch springs between them. */
@@ -72,6 +76,7 @@ export default function HomePage() {
   const wallpaperColor = useWallpaperColor()
   const timer = useTimer()
   const tasks = useTasks()
+  const reminders = useReminders()
   const focusLog = useFocusLog(timer)
   const [view, setView] = useState('glance')
   // A file dragged over the notch from outside: open Files, where the shelf is
@@ -263,10 +268,8 @@ export default function HomePage() {
   // OpenAI while the readings are switched off.
   // Settings also needs them, to count the cards a switch would add.
   const nothingChosen = !settings.showAvatar && !settings.showMusic && !settings.showTasks && !settings.showFocus
-  // The companion also needs them when it has been asked to talk about AI.
-  const companionWantsAi = settings.showAvatar && settings.companionMode === 'ai'
   const collapsedWantsAi = settings.collapsedRight === 'ai'
-  const aiLimits = useAiLimits(settings.showAiUsage || nothingChosen || view === 'settings' || view === 'desk' || companionWantsAi || collapsedWantsAi)
+  const aiLimits = useAiLimits(settings.showAiUsage || nothingChosen || view === 'settings' || collapsedWantsAi)
 
   useEffect(() => {
     window.bridge
@@ -275,14 +278,24 @@ export default function HomePage() {
         const loadedSettings: Settings = {
           ...DEFAULT_SETTINGS,
           ...stored,
-          // Translucent became Glass, now a real blur.
-          notchStyle: (stored?.notchStyle as string) === 'translucent' ? 'glass' : (stored?.notchStyle ?? DEFAULT_SETTINGS.notchStyle),
+          // Translucent became Glass, now a real blur; Mica is gone, so it is Default.
+          notchStyle:
+            (stored?.notchStyle as string) === 'translucent'
+              ? 'glass'
+              : (stored?.notchStyle as string) === 'mica'
+                ? 'black'
+                : (stored?.notchStyle ?? DEFAULT_SETTINGS.notchStyle),
           // Focus lives in the companion now; the glance card is retired.
           showFocus: false,
           // Older settings kept a list of topics under another name; the first
           // one becomes the mode.
+          // The AI mode became Screen time, and Tasks became Reminder.
           companionMode:
-            stored?.companionMode ??
+            ((stored?.companionMode as string) === 'ai'
+              ? 'screen'
+              : (stored?.companionMode as string) === 'tasks'
+                ? 'reminder'
+                : stored?.companionMode) ??
             ((Array.isArray((stored as any)?.companionSays) && (stored as any)?.companionSays[0]) as CompanionMode | undefined) ??
             DEFAULT_SETTINGS.companionMode,
         }
@@ -303,6 +316,20 @@ export default function HomePage() {
       .finally(() => {
         settingsLoaded.current = true
       })
+  }, [])
+
+  useEffect(() => onStoreChange<Settings>('settings', setSettings), [])
+
+  // Screen time comes from DeskTime; without it installed the option stays off.
+  const screenTime = useScreenTime(settings.collapsedRight === 'screen' || (settings.showAvatar && settings.companionMode === 'screen'))
+  const collapsedRight = settings.collapsedRight === 'screen' && !screenTime.installed ? 'time' : (settings.collapsedRight ?? 'time')
+  const companionMode = settings.companionMode === 'screen' && !screenTime.installed ? 'focus' : settings.companionMode
+
+  // A browser in front: the main process says when to tuck out of its tabs' way.
+  const [tucked, setTucked] = useState(false)
+  useEffect(() => {
+    void window.bridge?.invoke<boolean>('notch:tucked').then((t) => setTucked(Boolean(t)))
+    return window.bridge?.on<boolean>('notch:tucked', setTucked)
   }, [])
 
   useEffect(() => {
@@ -342,9 +369,26 @@ export default function HomePage() {
   // A focus session just ended: the notch opens on the Done card alone for a
   // few seconds, wherever the timer was started. Already open on a view that
   // shows the timer (the glance's focus companion, the desk), it says Done there.
+  // A reminder comes due: the notch opens on it, whatever it was showing,
+  // and holds for a minute (hovering keeps it longer). Each reminder rings
+  // once per time it is set for, so a snoozed one rings again.
+  const [ringing, setRinging] = useState<Reminder | null>(null)
+  const rung = useRef(new Set<string>())
+  useEffect(() => {
+    const due = reminders.due
+    if (!due || rung.current.has(`${due.id}@${due.at}`)) return
+    rung.current.add(`${due.id}@${due.at}`)
+    setRinging(due)
+    peek('reminder', 60_000)
+  }, [reminders.due?.id, reminders.due?.at])
+  const endRing = () => {
+    setHoldOpen(false)
+    setCloseKey((k) => k + 1)
+  }
+
   const wasFinished = useRef(timer.finished)
   useEffect(() => {
-    const showsTimer = view === 'desk' || (view === 'glance' && showCompanion && settings.companionMode === 'focus')
+    const showsTimer = view === 'desk' || (view === 'glance' && showCompanion && companionMode === 'focus')
     if (timer.finished && !wasFinished.current && !(notchOpen.current && showsTimer)) peek('done', 6000)
     wasFinished.current = timer.finished
   }, [timer.finished])
@@ -361,10 +405,11 @@ export default function HomePage() {
   const fixed = [
     // Wide while tasks mode shows its whole list, or focus its lengths (idle only).
     showCompanion &&
-      ((hubOpen && settings.companionMode === 'tasks') ||
-      (hubOpen && settings.companionMode === 'focus' && !timer.isRunning && !(timer.remainingMs > 0 && !timer.finished))
+      (hubOpen && companionMode === 'focus' && !timer.isRunning && !(timer.remainingMs > 0 && !timer.finished)
         ? COMPANION_OPEN_WIDTH
-        : hubOpen && settings.companionMode === 'time'
+        : hubOpen && companionMode === 'reminder'
+          ? COMPANION_REMINDER_WIDTH
+        : hubOpen && companionMode === 'time'
           ? COMPANION_TIME_WIDTH
           : COMPANION_WIDTH),
     media && MEDIA_WIDTH,
@@ -389,12 +434,14 @@ export default function HomePage() {
           ? { width: CAPTURE_WIDTH, height: CHROME_Y + CAPTURE_HEIGHT }
           : view === 'done'
             ? { width: DONE_WIDTH, height: CHROME_Y + DONE_HEIGHT }
+          : view === 'reminder'
+            ? { width: REMINDER_WIDTH, height: CHROME_Y + REMINDER_HEIGHT }
           : SIZES[view]
 
   return (
     <React.Fragment>
       <Head>
-        <title>deskNotch</title>
+        <title>DeskNotch</title>
       </Head>
       <div className="w-full h-full flex justify-center items-start pointer-events-none">
         <div className="pointer-events-auto">
@@ -424,7 +471,9 @@ export default function HomePage() {
             }
             onOpenChange={openChanged}
             closeKey={closeKey}
-            rail={view === 'capture' || view === 'done' ? undefined : 
+            tucked={tucked}
+            dockScale={DOCK_SCALE[settings.dockSize ?? 'default'] ?? 1}
+            rail={view === 'capture' || view === 'done' || view === 'reminder' ? undefined : 
               <>
                 <ViewRail views={shownViews} active={view} onChange={setView} />
                 <RailButton
@@ -433,7 +482,7 @@ export default function HomePage() {
                   layoutId="rail-settings"
                   onClick={() => setView((current) => (current === 'settings' ? 'glance' : 'settings'))}
                 >
-                  <Settings2 size={12} strokeWidth={2.2} />
+                  <Cog size={12} strokeWidth={2.2} />
                 </RailButton>
               </>
             }
@@ -457,11 +506,12 @@ export default function HomePage() {
                           avatar={settings.avatar}
                           photo={photo}
                           tasks={tasks}
+                          reminders={reminders}
                           timer={timer}
-                          limits={companionLimits}
+                          screenMs={screenTime.ms}
                           track={nowPlaying?.title ?? null}
                           playing={isPlayingAudio}
-                          mode={settings.companionMode}
+                          mode={companionMode}
                           sleeps={settings.companionSleeps ?? 'time'}
                           minutes={settings.focusMinutes ?? 25}
                           onMinutes={(m) => setSettings((s) => ({ ...s, focusMinutes: m }))}
@@ -479,6 +529,21 @@ export default function HomePage() {
                       <AiOrbs providers={aiShown} tint={orbTint} />
                     </div>
                     </AloneContext.Provider>
+                  ) : view === 'reminder' && ringing ? (
+                    <ReminderView
+                      reminder={ringing}
+                      avatar={settings.avatar}
+                      photo={photo}
+                      accent={accent}
+                      onSnooze={() => {
+                        reminders.snooze(ringing.id, 5)
+                        endRing()
+                      }}
+                      onDismiss={() => {
+                        reminders.remove(ringing.id)
+                        endRing()
+                      }}
+                    />
                   ) : view === 'done' ? (
                     <DoneView
                       timer={timer}
@@ -503,7 +568,7 @@ export default function HomePage() {
                   ) : view === 'files' ? (
                     <FileStrip accent={accent} dragging={dragging} onCount={setShelfCount} />
                   ) : view === 'settings' ? (
-                    <SettingsPanel settings={settings} onChange={setSettings} aiLimits={aiLimits} />
+                    <SettingsPanel settings={settings} onChange={setSettings} aiLimits={aiLimits} desktimeInstalled={screenTime.installed} />
                   ) : (
                     <DeskView
                       avatar={settings.avatar}
@@ -513,7 +578,6 @@ export default function HomePage() {
                       minutes={settings.focusMinutes ?? 25}
                       onMinutes={(m) => setSettings((s) => ({ ...s, focusMinutes: m }))}
                       accent={accent}
-                      limits={companionLimits}
                       log={focusLog}
                       track={nowPlaying?.title ?? null}
                       playing={isPlayingAudio}
@@ -532,7 +596,8 @@ export default function HomePage() {
                   timer={timer}
                   avatar={showCompanion ? settings.avatar : null}
                   photo={photo}
-                  right={settings.collapsedRight ?? 'time'}
+                  right={collapsedRight}
+                  screenMs={screenTime.ms}
                   limits={companionLimits}
                   privacy={privacy}
                   battery={battery}

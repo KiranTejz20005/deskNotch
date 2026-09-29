@@ -3,6 +3,21 @@ import { BrowserWindow, desktopCapturer, ipcMain, screen, systemPreferences } fr
 import os from 'os'
 import fs from 'fs'
 import path from 'path'
+import { readStore } from '../store'
+
+/** Notch windows whose Glass backdrop is live. */
+const glassOn = new Set<number>()
+
+/**
+ * Leaves the notch out of screenshots and screen sharing (WDA_EXCLUDEFROMCAPTURE):
+ * always under Glass, which needs to capture what is behind it, and whenever
+ * the Hide in screenshots setting is on. Called when either changes and when
+ * a notch window is made.
+ */
+export const applyContentProtection = () => {
+  const hide = readStore().settings?.hideInScreenshots === true
+  for (const window of BrowserWindow.getAllWindows()) window.setContentProtection(hide || glassOn.has(window.id))
+}
 
 export function registerSystemIpc() {
   /** Memory pressure and uptime, read from Node rather than a native module. */
@@ -52,7 +67,11 @@ export function registerSystemIpc() {
    * appear in screenshots or screen shares.
    */
   ipcMain.handle('glass:protect', (event, on: unknown) => {
-    BrowserWindow.fromWebContents(event.sender)?.setContentProtection(on === true)
+    const window = BrowserWindow.fromWebContents(event.sender)
+    if (!window) return
+    if (on === true) glassOn.add(window.id)
+    else glassOn.delete(window.id)
+    applyContentProtection()
   })
 
   /** The capture source for the display the notch is on, for the renderer to stream. */

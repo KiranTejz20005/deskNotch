@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- deskNotch: a laptop whose screen has a notch cut into its top edge.
+       Two flat colours, simple geometry, so it stays crisp from 16 px up. -->
+  <rect width="512" height="512" rx="112" fill="#111113"/>
+
+  <!-- The screen (16:10), traced in one outline with the notch taken out of
+       its top edge; the notch's ears curve into the edge like a MacBook's. -->
+  <path fill="#F4F4F5" d="
+    M 112 124
+    L 190 124
+    Q 204 124 204 138
+    L 204 140
+    A 22 22 0 0 0 226 162
+    L 286 162
+    A 22 22 0 0 0 308 140
+    L 308 138
+    Q 308 124 322 124
+    L 400 124
+    A 28 28 0 0 1 428 152
+    L 428 330
+    A 28 28 0 0 1 400 358
+    L 112 358
+    A 28 28 0 0 1 84 330
+    L 84 152
+    A 28 28 0 0 1 112 124
+    Z"/>
+
+  <!-- The base, a little wider than the screen, with the lip you open it by. -->
+  <path fill="#F4F4F5" d="
+    M 60 376
+    L 222 376
+    Q 222 388 234 388
+    L 278 388
+    Q 290 388 290 376
+    L 452 376
+    L 452 382
+    A 14 14 0 0 1 438 396
+    L 74 396
+    A 14 14 0 0 1 60 382
+    Z"/>
+</svg>

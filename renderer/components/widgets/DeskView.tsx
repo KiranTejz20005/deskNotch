@@ -4,7 +4,6 @@ import { Check, Plus, X } from 'lucide-react'
 import { CompanionTile, type CompanionSleeps } from './CompanionTile'
 import { TILE } from '../ui/tile'
 import { CHROME_X, CHROME_Y } from '../notch/NotchChassis'
-import type { ProviderLimits } from '../../hooks/useAiLimits'
 import type { TaskStore } from '../../hooks/useTasks'
 import type { Timer } from '../../hooks/useTimer'
 import type { useFocusLog } from '../../hooks/useFocusLog'
@@ -38,15 +37,21 @@ const Tasks: React.FC<{ tasks: TaskStore; accent: string }> = ({ tasks, accent }
 
   return (
     <motion.div variants={staggered} className="flex min-h-0 min-w-0 flex-1 flex-col" onClick={stop}>
-      <motion.div variants={stage} className="flex h-[34px] items-center gap-2.5 border-b border-white/[0.1] transition-colors focus-within:border-white/40">
-        <Plus size={13} strokeWidth={2.2} className="shrink-0 text-white/35" />
-        <input
+      <motion.div variants={stage} className="flex min-h-[34px] items-start gap-2.5 border-b border-white/[0.1] py-[8px] transition-colors focus-within:border-white/40">
+        <Plus size={13} strokeWidth={2.2} className="mt-[3px] shrink-0 text-white/35" />
+        {/* Grows as the words wrap, so a long task reads as a paragraph while typed. */}
+        <textarea
+          rows={1}
           value={draft}
           maxLength={200}
-          onChange={(event) => setDraft(event.target.value)}
-          onKeyDown={(event) => event.key === 'Enter' && submit()}
+          onChange={(event) => setDraft(event.target.value.replace(/\n/g, ' '))}
+          onKeyDown={(event) => {
+            if (event.key !== 'Enter') return
+            event.preventDefault()
+            submit()
+          }}
           placeholder="What needs doing"
-          className="min-w-0 flex-1 bg-transparent text-[13.5px] text-white outline-none placeholder:text-white/30"
+          className="max-h-[80px] min-w-0 flex-1 resize-none overflow-y-auto break-words bg-transparent text-[13.5px] leading-snug text-white outline-none [field-sizing:content] [scrollbar-width:none] placeholder:text-white/30"
           style={{ caretColor: accent }}
         />
         {open.length > 0 && <span className="text-[11px] tabular-nums text-white/30">{open.length}</span>}
@@ -66,14 +71,14 @@ const Tasks: React.FC<{ tasks: TaskStore; accent: string }> = ({ tasks, accent }
               // The whole row ticks, text and all, as in the companion; the
               // circle lights up while the pointer is anywhere on the row.
               onClick={() => toggle(task.id)}
-              className="group -mx-2 flex h-[30px] cursor-pointer items-center gap-3 px-2"
+              className="group -mx-2 flex min-h-[30px] cursor-pointer items-start gap-3 px-2 py-[7px]"
               style={{ '--accent': accent } as React.CSSProperties}
             >
               <span
                 role="checkbox"
                 aria-checked={task.done}
                 aria-label={task.done ? 'Mark as not done' : 'Mark as done'}
-                className={`grid h-[15px] w-[15px] shrink-0 place-items-center rounded-full border transition-colors ${
+                className={`mt-[1px] grid h-[15px] w-[15px] shrink-0 place-items-center rounded-full border transition-colors ${
                   task.done
                     ? 'border-white/60 bg-white/60'
                     : 'border-white/30 group-hover:border-[var(--accent)] group-hover:bg-[color-mix(in_srgb,var(--accent)_25%,transparent)]'
@@ -81,7 +86,7 @@ const Tasks: React.FC<{ tasks: TaskStore; accent: string }> = ({ tasks, accent }
               >
                 {task.done && <Check size={9} strokeWidth={3} className="text-black" />}
               </span>
-              <span className={`min-w-0 flex-1 truncate text-[13.5px] leading-tight ${task.done ? 'text-white/30 line-through' : 'text-white/90'}`}>
+              <span className={`min-w-0 flex-1 break-words text-[13.5px] leading-snug ${task.done ? 'text-white/30 line-through' : 'text-white/90'}`}>
                 {task.label}
               </span>
               <button
@@ -91,7 +96,7 @@ const Tasks: React.FC<{ tasks: TaskStore; accent: string }> = ({ tasks, accent }
                   event.stopPropagation()
                   remove(task.id)
                 }}
-                className="opacity-0 transition-opacity group-hover:opacity-100"
+                className="mt-[2px] opacity-0 transition-opacity group-hover:opacity-100"
               >
                 <X size={12} strokeWidth={2} className="text-white/35 hover:text-white" />
               </button>
@@ -133,7 +138,6 @@ interface DeskViewProps {
   onMinutes: (m: number) => void
   /** The companion's colour, so the desk and the glance agree. */
   accent: string
-  limits: ProviderLimits[] | null
   log: ReturnType<typeof useFocusLog>
   track: string | null
   playing: boolean
@@ -149,7 +153,7 @@ interface DeskViewProps {
  * desk is where the work happens (the glance's companion can be on anything
  * else), beside the whole task list.
  */
-export const DeskView: React.FC<DeskViewProps> = ({ avatar, photo, tasks, timer, minutes, onMinutes, accent, limits, track, playing, sleeps }) => {
+export const DeskView: React.FC<DeskViewProps> = ({ avatar, photo, tasks, timer, minutes, onMinutes, accent, track, playing, sleeps }) => {
   const [lengths, setLengths] = useState(false)
   return (
   <motion.div variants={staggered} initial="hidden" animate="shown" className="flex h-full flex-col">
@@ -161,7 +165,6 @@ export const DeskView: React.FC<DeskViewProps> = ({ avatar, photo, tasks, timer,
           photo={photo}
           tasks={tasks}
           timer={timer}
-          limits={limits ?? []}
           track={track}
           playing={playing}
           mode="focus"

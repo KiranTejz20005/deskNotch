@@ -222,7 +222,7 @@ export const TaskTile: React.FC<{ tasks: TaskStore; accent: string }> = ({ tasks
             <span className="text-[12.5px] font-medium text-white/80">All done</span>
           </motion.div>
         ) : (
-          <div className="flex flex-col">
+          <div className="-mr-1 flex min-h-0 flex-1 flex-col overflow-y-auto pr-1 [scrollbar-width:none]">
             <AnimatePresence initial={false}>
               {open.slice(0, SHOWN).map((task) => {
                 const done = ticked.includes(task.id)
@@ -239,10 +239,10 @@ export const TaskTile: React.FC<{ tasks: TaskStore; accent: string }> = ({ tasks
                       event.stopPropagation()
                       tick(task.id)
                     }}
-                    className="group/row flex h-[24px] min-w-0 items-center gap-2 text-left"
+                    className="group/row flex min-h-[24px] min-w-0 shrink-0 items-start gap-2 py-[4px] text-left"
                   >
                     <span
-                      className={`grid h-[15px] w-[15px] shrink-0 place-items-center rounded-full border-[1.5px] transition-colors duration-150 ${
+                      className={`mt-[-1px] grid h-[15px] w-[15px] shrink-0 place-items-center rounded-full border-[1.5px] transition-colors duration-150 ${
                         done ? '' : 'border-white/30 group-hover/row:border-white/60'
                       }`}
                       style={done ? { borderColor: accent, background: accent } : undefined}
@@ -253,15 +253,13 @@ export const TaskTile: React.FC<{ tasks: TaskStore; accent: string }> = ({ tasks
                         </motion.span>
                       )}
                     </span>
-                    <span className="relative min-w-0 truncate text-[12.5px] leading-none">
-                      <span className={`transition-colors duration-200 ${done ? 'text-white/35' : 'text-white/85'}`}>{task.label}</span>
-                      <motion.span
-                        aria-hidden
-                        className="absolute left-0 top-1/2 h-px bg-white/45"
-                        initial={false}
-                        animate={{ width: done ? '100%' : '0%' }}
-                        transition={{ duration: 0.22, ease: 'easeOut' }}
-                      />
+                    {/* Long tasks wrap as a paragraph; ticked, the text is struck through on every line. */}
+                    <span
+                      className={`min-w-0 break-words text-[12.5px] leading-snug transition-colors duration-200 ${
+                        done ? 'text-white/35 line-through decoration-white/45' : 'text-white/85'
+                      }`}
+                    >
+                      {task.label}
                     </span>
                   </motion.button>
                 )

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { onStoreChange } from '../lib/store'
 
 /** Mirrors FileItem in main/ipc/files.ts. */
 export interface FileItem {
@@ -27,6 +28,14 @@ export function useFileList(key: 'shelf' | 'pins') {
         loaded.current = true
       })
   }, [key])
+
+  useEffect(
+    () =>
+      onStoreChange<string[]>(key, (paths) =>
+        window.bridge?.invoke<FileItem[]>('files:describe', paths ?? []).then((list) => setItems(list ?? [])),
+      ),
+    [key],
+  )
 
   useEffect(() => {
     if (!loaded.current) return

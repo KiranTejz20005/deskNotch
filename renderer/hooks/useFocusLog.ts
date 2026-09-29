@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Timer } from './useTimer'
+import { onStoreChange } from '../lib/store'
 
 /** One finished session. */
 interface Session {
@@ -31,6 +32,8 @@ export function useFocusLog(timer: Timer) {
         loaded.current = true
       })
   }, [])
+
+  useEffect(() => onStoreChange<Session[]>(KEY, setLog), [])
 
   // A session counts the moment it finishes — once, on the edge.
   const wasFinished = useRef(timer.finished)

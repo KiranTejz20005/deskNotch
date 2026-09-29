@@ -1,12 +1,15 @@
-import { BrowserWindow } from 'electron'
+import { BrowserWindow, screen } from 'electron'
 import { spawn, ChildProcess } from 'child_process'
 import { readStore } from './store'
-import { resolveTargetDisplay } from './display'
+import { notchWindows } from './display'
 
 let watcherProcess: ChildProcess | null = null
-let mainWindowRef: BrowserWindow | null = null
-let isHiddenByFullscreen = false
-let lastRawResult: string = 'false'
+let lastRawResult = ''
+/** Per notch window id: whether it is tucked up out of a browser's way. */
+const tucked = new Map<number, boolean>()
+
+/** Browsers, by process name: their tabs and address bar sit right under the notch. */
+const BROWSERS = new Set(['chrome', 'msedge', 'firefox', 'brave', 'opera', 'vivaldi'])
 
 const SCRIPT = (parentPid: number) => `
 $code = @"
@@ -49,44 +52,54 @@ public class FullscreenCheck {
     [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Auto)]
     public static extern int GetWindowText(IntPtr hWnd, StringBuilder lpString, int nMaxCount);
 
+    [DllImport("user32.dll")]
+    public static extern bool IsZoomed(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+
     public const uint MONITOR_DEFAULTTONEAREST = 2;
 
-    public static string IsForegroundFullscreen() {
+    // "fullscreen,monitorLeft,monitorTop,monitorRight,monitorBottom,exe" for
+    // the foreground window, or "self" when it is deskNotch (keep the state).
+    public static string Foreground() {
         IntPtr hwnd = GetForegroundWindow();
-        if (hwnd == IntPtr.Zero) return "false";
+        if (hwnd == IntPtr.Zero) return "0,0,0,0,0,";
 
         StringBuilder className = new StringBuilder(256);
         GetClassName(hwnd, className, 256);
         string cls = className.ToString();
-
-        if (cls == "Progman" || cls == "WorkerW" || cls == "Shell_TrayWnd" || cls == "Shell_SecondaryTrayWnd") {
-            return "false";
-        }
+        bool shell = cls == "Progman" || cls == "WorkerW" || cls == "Shell_TrayWnd" || cls == "Shell_SecondaryTrayWnd";
 
         StringBuilder title = new StringBuilder(256);
         GetWindowText(hwnd, title, 256);
-        if (title.ToString() == "deskNotch") {
-            return "false";
-        }
-
-        RECT rect;
-        if (!GetWindowRect(hwnd, out rect)) return "false";
+        if (title.ToString() == "DeskNotch") return "self";
 
         IntPtr hMonitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
         MONITORINFO mi = new MONITORINFO();
         mi.cbSize = Marshal.SizeOf(typeof(MONITORINFO));
+        if (!GetMonitorInfo(hMonitor, ref mi)) return "0,0,0,0,0,";
 
-        if (!GetMonitorInfo(hMonitor, ref mi)) return "false";
-
-        bool coversWidth = (rect.Left <= mi.rcMonitor.Left + 2) && (rect.Right >= mi.rcMonitor.Right - 2);
-        bool coversHeight = (rect.Top <= mi.rcMonitor.Top + 2) && (rect.Bottom >= mi.rcMonitor.Bottom - 2);
-        bool isFullscreen = coversWidth && coversHeight;
-
-        if (isFullscreen) {
-            return string.Format("{0},{1},{2},{3}", mi.rcMonitor.Left, mi.rcMonitor.Top, mi.rcMonitor.Right, mi.rcMonitor.Bottom);
+        // Fullscreen is F11 or a video's fullscreen: the window exactly covers
+        // the monitor and is NOT maximized. A maximized window can cover it too
+        // (auto-hide taskbar, or its 8px border overshooting the work area),
+        // which is why IsZoomed is checked, not just the rect.
+        bool fullscreen = false;
+        RECT rect;
+        if (!shell && !IsZoomed(hwnd) && GetWindowRect(hwnd, out rect)) {
+            fullscreen = rect.Left <= mi.rcMonitor.Left + 2 && rect.Top <= mi.rcMonitor.Top + 2
+                && rect.Right >= mi.rcMonitor.Right - 2 && rect.Bottom >= mi.rcMonitor.Bottom - 2;
         }
 
-        return "false";
+        string exe = "";
+        try {
+            uint pid;
+            GetWindowThreadProcessId(hwnd, out pid);
+            exe = System.Diagnostics.Process.GetProcessById((int)pid).ProcessName;
+        } catch {}
+
+        return string.Format("{0},{1},{2},{3},{4},{5}", fullscreen ? 1 : 0,
+            mi.rcMonitor.Left, mi.rcMonitor.Top, mi.rcMonitor.Right, mi.rcMonitor.Bottom, exe);
     }
 }
 "@
@@ -96,7 +109,7 @@ Add-Type -TypeDefinition $code -ErrorAction SilentlyContinue
 $last = ""
 while ($true) {
   if (-not (Get-Process -Id ${parentPid} -ErrorAction SilentlyContinue)) { exit }
-  $res = [FullscreenCheck]::IsForegroundFullscreen()
+  $res = [FullscreenCheck]::Foreground()
   if ($res -ne $last) {
     Write-Output $res
     $last = $res
@@ -105,8 +118,7 @@ while ($true) {
 }
 `
 
-export function startFullscreenWatch(win: BrowserWindow) {
-  mainWindowRef = win
+export function startFullscreenWatch() {
   if (process.platform !== 'win32') return
 
   if (watcherProcess) return
@@ -148,68 +160,61 @@ export function stopFullscreenWatch() {
   }
 }
 
+/** Starts the watcher when a setting needs it and stops it when none does:
+ *  its PowerShell costs ~80 MB, not worth keeping for nothing. */
 export function checkAndApplyFullscreenState() {
+  const settings = (readStore().settings ?? {}) as Record<string, unknown>
+  if (settings.hideOnFullscreen === false && settings.tuckForBrowsers !== true) {
+    stopFullscreenWatch()
+    lastRawResult = ''
+    // Nothing in front on any monitor: every notch shown and untucked.
+    handleFullscreenChange('0,0,0,0,0,')
+    return
+  }
+  startFullscreenWatch()
   handleFullscreenChange(lastRawResult)
 }
 
+/** Whether this notch is tucked right now, for a renderer that just loaded. */
+export const isTucked = (windowId: number) => tucked.get(windowId) ?? false
+
 function handleFullscreenChange(rawResult: string) {
+  // deskNotch itself in front (being hovered or clicked): leave everything as it was.
+  if (rawResult === 'self') return
+  const [flag, l, t, r, b, exe = ''] = rawResult.split(',')
+  const monitor = [l, t, r, b].map(Number)
+  // A half-written line leaves the notches as they are.
+  if ((flag !== '0' && flag !== '1') || monitor.some(isNaN)) return
   lastRawResult = rawResult
-  if (!mainWindowRef || mainWindowRef.isDestroyed()) return
 
-  const store = readStore()
-  const settings = (store.settings ?? {}) as Record<string, unknown>
+  const settings = (readStore().settings ?? {}) as Record<string, unknown>
   const hideOnFullscreen = settings.hideOnFullscreen !== false
+  const tuckForBrowsers = settings.tuckForBrowsers === true
+  const browser = BROWSERS.has(exe.toLowerCase())
 
-  if (!hideOnFullscreen) {
-    if (isHiddenByFullscreen) {
-      restoreWindow()
+  const displays = screen.getAllDisplays()
+  for (const [id, window] of notchWindows()) {
+    const display = displays.find((d) => String(d.id) === id)
+    // Only the notch on the foreground window's monitor reacts to it.
+    let onDisplay = false
+    if (display) {
+      const { x, y, width, height } = display.bounds
+      onDisplay = monitor[0] < x + width && monitor[2] > x && monitor[1] < y + height && monitor[3] > y
     }
-    return
-  }
+    const hide = hideOnFullscreen && flag === '1' && onDisplay
+    if (hide && window.isVisible()) window.hide()
+    else if (!hide && !window.isVisible()) restoreWindow(window)
 
-  if (rawResult === 'false') {
-    if (isHiddenByFullscreen) {
-      restoreWindow()
-    }
-  } else {
-    const parts = rawResult.split(',').map(Number)
-    if (parts.length === 4 && !parts.some(isNaN)) {
-      const [fsLeft, fsTop, fsRight, fsBottom] = parts
-
-      const selectedDisplayId = (settings.selectedDisplayId as string) || 'primary'
-      const targetDisplay = resolveTargetDisplay(selectedDisplayId)
-
-      const targetLeft = targetDisplay.bounds.x
-      const targetTop = targetDisplay.bounds.y
-      const targetRight = targetDisplay.bounds.x + targetDisplay.bounds.width
-      const targetBottom = targetDisplay.bounds.y + targetDisplay.bounds.height
-
-      const isMatch = fsLeft < targetRight && fsRight > targetLeft && fsTop < targetBottom && fsBottom > targetTop
-
-      if (isMatch) {
-        if (!isHiddenByFullscreen) {
-          hideWindow()
-        }
-      } else {
-        if (isHiddenByFullscreen) {
-          restoreWindow()
-        }
-      }
+    const tuck = tuckForBrowsers && browser && onDisplay && !hide
+    if (isTucked(window.id) !== tuck) {
+      tucked.set(window.id, tuck)
+      window.webContents.send('notch:tucked', tuck)
     }
   }
 }
-
-function hideWindow() {
-  if (!mainWindowRef || mainWindowRef.isDestroyed()) return
-  isHiddenByFullscreen = true
-  mainWindowRef.hide()
-}
-
-function restoreWindow() {
-  if (!mainWindowRef || mainWindowRef.isDestroyed()) return
-  isHiddenByFullscreen = false
-  mainWindowRef.showInactive()
-  mainWindowRef.setAlwaysOnTop(true, 'screen-saver')
-  mainWindowRef.setVisibleOnAllWorkspaces(true)
-  mainWindowRef.setSkipTaskbar(true)
+function restoreWindow(window: BrowserWindow) {
+  window.showInactive()
+  window.setAlwaysOnTop(true, 'screen-saver')
+  window.setVisibleOnAllWorkspaces(true)
+  window.setSkipTaskbar(true)
 }
