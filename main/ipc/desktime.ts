@@ -1,18 +1,56 @@
 /**
- * Screen time from DeskTime (github.com/ManasJhaMJ/DeskTime), a separate app.
+ * Screen time from ScreenWise (formerly DeskTime, github.com/ManasJhaMJ/DeskTime), a separate app.
  *
  * DeskTime has no API or pub/sub: it keeps everything in a local SQLite file.
  * So it is read directly, read-only, with the same sum DeskTime's own
- * dashboard and tray use for "screen time today". No DeskTime, no database,
- * no reading: the notch's option stays greyed out with a download link.
+ * dashboard and tray use for "screen time today". Not installed, no reading:
+ * the notch's option stays greyed out with a download link.
+ *
+ * "Installed" is Windows' own list of installed programs, not the database:
+ * uninstalling leaves the database behind in AppData, and reading that showed
+ * stale screen time for an app that was gone.
  */
 import { ipcMain, shell } from 'electron'
+import { execFile } from 'child_process'
 import fs from 'fs'
 import path from 'path'
 
-export const DESKTIME_URL = 'https://github.com/ManasJhaMJ/DeskTime/releases/latest'
+/** Where installers register themselves: per user, per machine, and 32-bit per machine. */
+const UNINSTALL_KEYS = [
+  'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall',
+  'HKLM\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall',
+  'HKLM\\Software\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall',
+]
+const APP_NAME = /^\s*DisplayName\s+REG_SZ\s+(ScreenWise|DeskTime)\b/im
 
-const dbFile = () => path.join(process.env.APPDATA ?? '', 'DeskTime', 'desktime.db')
+/** Every DisplayName under one uninstall key, as `reg query` prints them. */
+const displayNames = (key: string) =>
+  new Promise<string>((resolve) =>
+    execFile('reg', ['query', key, '/s', '/v', 'DisplayName'], { windowsHide: true, maxBuffer: 8 << 20 }, (_error, stdout) => resolve(stdout ?? '')),
+  )
+
+/** Whether ScreenWise (or DeskTime) is installed. Asked at most once a minute. */
+let installedCache: { at: number; value: boolean } | null = null
+const isInstalled = async () => {
+  if (installedCache && Date.now() - installedCache.at < 60_000) return installedCache.value
+  const value = (await Promise.all(UNINSTALL_KEYS.map(displayNames))).some((out) => APP_NAME.test(out))
+  installedCache = { at: Date.now(), value }
+  return value
+}
+
+// All its releases are pre-releases, which /releases/latest skips (a 404), so
+// the list. GitHub redirects this once the repo is renamed to ScreenWise.
+export const DESKTIME_URL = 'https://github.com/ManasJhaMJ/DeskTime/releases'
+
+/** DeskTime is being renamed ScreenWise; its data folder and file follow the
+ *  app's name, so both are looked for, the new name first. */
+const DB_FILES = [
+  ['ScreenWise', 'screenwise.db'],
+  ['ScreenWise', 'desktime.db'],
+  ['DeskTime', 'desktime.db'],
+]
+const dbFile = () =>
+  DB_FILES.map(([dir, file]) => path.join(process.env.APPDATA ?? '', dir, file)).find((file) => fs.existsSync(file)) ?? null
 
 /** DeskTime's own query (db.ts dayTotals): active + idle, hidden apps left out. */
 const TODAY_SQL = `
@@ -37,9 +75,9 @@ export interface ScreenTime {
   ms: number | null
 }
 
-function readScreenTime(): ScreenTime {
+async function readScreenTime(): Promise<ScreenTime> {
   const file = dbFile()
-  if (!fs.existsSync(file)) return { installed: false, ms: null }
+  if (!file || !(await isInstalled())) return { installed: false, ms: null }
   let db: import('node:sqlite').DatabaseSync | undefined
   try {
     // getBuiltinModule, not import: the main bundle's webpack does not know node:sqlite.

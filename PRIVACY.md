@@ -14,7 +14,7 @@ DeskNotch reads the following from Windows to show them in the notch. None of it
 - **Battery, CPU, GPU and memory use.**
 - **Screenshots**: new images in your Screenshots folder, so the notch can offer them to you. Renaming or discarding one only happens when you ask.
 - **Your most used apps**, from Windows' own list, for the apps bar.
-- **Screen time**, if you have the separate app DeskTime installed: DeskNotch reads today's total from DeskTime's local database.
+- **Screen time**, if you have the separate app ScreenWise installed: DeskNotch reads today's total from ScreenWise's local database.
 - **Glass style**: a live image of the screen area behind the notch, used only to draw the blur. It is processed in memory and never saved or sent.
 
 ## What DeskNotch saves
@@ -26,7 +26,7 @@ Your settings, tasks, reminders, focus history, the files you put on the Shelf (
 - **AI usage (optional)**: if you use Claude Code or Codex on the same PC, DeskNotch reads the sign-in those tools already keep and sends it only to their own providers, Anthropic (`api.anthropic.com`) and OpenAI (`chatgpt.com`), to fetch how much of your usage limit is used. It is never sent anywhere else. You can turn AI usage off in Settings.
 - **Updates**: the version downloaded from GitHub checks GitHub Releases for new versions. The Microsoft Store version is updated by the Microsoft Store. As with any web request, GitHub or Microsoft can see your IP address.
 
-Links you choose to open (for example "Get DeskTime") open in your web browser.
+Links you choose to open (for example "Get ScreenWise") open in your web browser.
 
 ## Children
 

@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react'
 
 export interface ScreenTime {
-  /** DeskTime is on this PC: its database exists. */
+  /** ScreenWise is on this PC: its database exists. */
   installed: boolean
-  /** Today's screen time in ms, as DeskTime counts it; null when unreadable. */
+  /** Today's screen time in ms, as ScreenWise counts it; null when unreadable. */
   ms: number | null
 }
 
-/** Today's screen time from DeskTime. Always checked once (Settings needs to
+/** Today's screen time from ScreenWise. Always checked once (Settings needs to
  *  know it is installed); re-read every minute only while `live`. */
 export function useScreenTime(live: boolean): ScreenTime {
   const [state, setState] = useState<ScreenTime>({ installed: false, ms: null })
@@ -18,7 +18,7 @@ export function useScreenTime(live: boolean): ScreenTime {
         .then(setState)
         .catch(() => {})
     read()
-    // DeskTime writes every 15s; a minute is plenty for an h/m reading.
+    // ScreenWise writes every 15s; a minute is plenty for an h/m reading.
     const timer = live ? setInterval(read, 60_000) : undefined
     return () => clearInterval(timer)
   }, [live])

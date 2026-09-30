@@ -38,7 +38,7 @@ export interface Settings {
   dockSide: DockSide
   /** Views taken off the dock ('glance', 'desk', 'files'); Settings and the lock always stay. */
   hiddenViews: string[]
-  /** What the closed notch shows on its right; 'screen' needs DeskTime installed. */
+  /** What the closed notch shows on its right; 'screen' needs ScreenWise installed. */
   collapsedRight: 'time' | 'ai' | 'screen'
   /** Open the notch on each new screenshot. */
   catchScreenshots: boolean
@@ -259,7 +259,7 @@ interface SettingsPanelProps {
   onChange: (next: Settings) => void
   /** The AI limits found, to offer them one by one. */
   aiLimits: ProviderLimits[] | null
-  /** DeskTime is installed, so the screen-time reading can be picked. */
+  /** ScreenWise is installed, so the screen-time reading can be picked. */
   desktimeInstalled: boolean
 }
 
@@ -467,7 +467,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onChange
               value={settings.companionMode === 'screen' && !desktimeInstalled ? 'focus' : settings.companionMode}
               onChange={(v) => set('companionMode', v)}
               disabled={desktimeInstalled ? [] : ['screen']}
-              disabledTitle="Needs DeskTime installed"
+              disabledTitle="Needs ScreenWise installed"
             />
           </Row>
           <Row title="Sleep">
@@ -487,15 +487,15 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onChange
                 { id: 'ai', label: 'AI usage' },
                 { id: 'screen', label: 'Screen time' },
               ] as const}
-              // Picked earlier, then DeskTime was uninstalled: the clock stands in.
+              // Picked earlier, then ScreenWise was uninstalled: the clock stands in.
               value={settings.collapsedRight === 'screen' && !desktimeInstalled ? 'time' : (settings.collapsedRight ?? 'time')}
               onChange={(v) => set('collapsedRight', v)}
               disabled={desktimeInstalled ? [] : ['screen']}
-              disabledTitle="Needs DeskTime installed"
+              disabledTitle="Needs ScreenWise installed"
             />
           </Row>
           {!desktimeInstalled && (
-            <Row title="Screen time" detail="Requires DeskTime">
+            <Row title="Screen time" detail="Requires ScreenWise">
               <button
                 type="button"
                 onClick={(event) => {
@@ -504,7 +504,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onChange
                 }}
                 className="h-[22px] shrink-0 rounded-full bg-white px-2.5 text-[10.5px] font-medium text-black"
               >
-                Get DeskTime
+                Get ScreenWise
               </button>
             </Row>
           )}

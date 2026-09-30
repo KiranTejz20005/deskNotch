@@ -15,7 +15,7 @@ DeskNotch sits at the top centre of your screen as a slim bar. Hover it, and it 
 - **Focus countdown**: a tiny ring and the time left while a session runs.
 - **Clock**: 12-hour time whenever nothing else needs the space.
 - **AI usage**: your Claude and Codex limits as two small rings, 5-hour inside and weekly outside.
-- **Screen time**: today's total from [DeskTime](https://github.com/ManasJhaMJ/DeskTime), if you have it installed.
+- **Screen time**: today's total from [ScreenWise](https://github.com/ManasJhaMJ/DeskTime/releases), if you have it installed.
 - **Privacy dots**: orange while any app uses the microphone, green for the camera, and the app's name for a moment when it starts.
 - **Just connected**: headphones, Wi-Fi and Bluetooth devices get a brief moment of their own when they connect, with the battery level for earbuds and mice that report one.
 - **Battery**: a moment when you plug in or unplug, a warning at 20% and 10%, and the charge kept in view while it is low.
@@ -26,7 +26,7 @@ DeskNotch sits at the top centre of your screen as a slim bar. Hover it, and it 
 - **Shelf**: drop files anywhere on the notch to park them, with thumbnails; drag them back out one at a time, or all at once.
 
 ### A companion with a job
-- **One mode at a time**: Timer, Reminder, Clock or Screen time (needs DeskTime), each with its own look and body language.
+- **One mode at a time**: Timer, Reminder, Clock or Screen time (needs ScreenWise), each with its own look and body language.
 - **Focus timer**: 1 to 60 minutes, or any custom length down to the second.
 - **Reminders**: pick a time and an optional message; when it comes, the notch opens on its own with your companion ringing, and you can snooze it or let it go.
 - **It reacts**: watches what it is working on, celebrates a finished task, and sleeps at night.
@@ -84,7 +84,7 @@ Everything stays on your PC. Media, microphone and camera state, Wi-Fi, Bluetoot
 ## Known limits (beta)
 
 - **Start with Windows** works for the installed app only, not `npm run dev`.
-- **Screen time** needs [DeskTime](https://github.com/ManasJhaMJ/DeskTime/releases/latest); without it the option is greyed out. It updates about once a minute.
+- **Screen time** needs [ScreenWise](https://github.com/ManasJhaMJ/DeskTime/releases); without it the option is greyed out. It updates about once a minute.
 - **Glass** hides the notch from screenshots and screen sharing while it is on; that is how Windows lets an app capture what is behind it.
 - **Screenshots** are caught when Snipping Tool saves them, which is its default.
 - **AI usage** appears only if you use Claude Code or Codex on the same PC.

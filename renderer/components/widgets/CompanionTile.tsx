@@ -348,8 +348,8 @@ const TimeMode: React.FC<{ now: Date; accent: string; aim: Aim; expanded: boolea
 }
 
 /**
- * Screen time: today's total from DeskTime as a big figure, the same count
- * DeskTime's own dashboard shows.
+ * Screen time: today's total from ScreenWise as a big figure, the same count
+ * ScreenWise's own dashboard shows.
  */
 const ScreenMode: React.FC<{ ms: number | null; aim: Aim }> = ({ ms, aim }) => {
   const figure = useRef<HTMLSpanElement>(null)
@@ -363,7 +363,7 @@ const ScreenMode: React.FC<{ ms: number | null; aim: Aim }> = ({ ms, aim }) => {
       <span ref={figure} className="mt-1 block text-[28px] font-semibold leading-none tracking-[-0.04em] tabular-nums text-white">
         {ms == null ? '—' : formatScreenTime(ms)}
       </span>
-      <ScrollingText className="mt-2 text-[10.5px] leading-none text-white/40">Today, from DeskTime</ScrollingText>
+      <ScrollingText className="mt-2 text-[10.5px] leading-none text-white/40">Today, from ScreenWise</ScrollingText>
     </div>
   )
 }
@@ -588,7 +588,7 @@ interface CompanionTileProps {
   /** For reminder mode; the desk's companion, always in focus, goes without. */
   reminders?: ReminderStore
   timer: Timer
-  /** Today's screen time from DeskTime, for screen mode. */
+  /** Today's screen time from ScreenWise, for screen mode. */
   screenMs?: number | null
   /** The current track, if any: a new one is a moment to react to. */
   track: string | null
