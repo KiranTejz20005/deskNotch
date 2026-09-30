@@ -8,7 +8,7 @@ A walkthrough of everything added, fixed and removed in this round of work, so y
 
 ## Contents
 
-1. [Screen time from ScreenWise](#1-screen-time-from-desktime)
+1. [Screen time from ScreenWise](#1-screen-time-from-screenwise)
 2. [Start with Windows showed "Electron"](#2-start-with-windows-showed-electron)
 3. [Hide in fullscreen hid on maximize](#3-hide-in-fullscreen-hid-on-maximize)
 4. [Shrink over browsers](#4-shrink-over-browsers)
@@ -36,28 +36,26 @@ A walkthrough of everything added, fixed and removed in this round of work, so y
 
 ## 1. Screen time from ScreenWise
 
-**What.** The notch can show today's screen time, taken from your friend's app [ScreenWise](https://github.com/ManasJhaMJ/DeskTime/releases). It appears in two places:
+**What.** The notch can show today's screen time, taken from your friend's app [ScreenWise](http://bruhlabs.top/). It appears in two places:
 
 - **Closed notch, right side**: Settings → Notch → Closed notch → Right side → **Screen time**. Shows an hourglass and "3h 44m".
 - **Companion**: mode **Screen time** shows the figure large, with "Today, from ScreenWise".
 
 If ScreenWise is **not installed**, both options are greyed out and a **Get ScreenWise** button opens its releases page. If someone picked Screen time and later uninstalls ScreenWise, the clock shows instead.
 
-**Why it works this way.** ScreenWise has no publisher/subscriber or API to connect to. It writes everything into a local SQLite database, `%APPDATA%\ScreenWise` (or the older `%APPDATA%\DeskTime`). So DeskNotch simply **reads that file, read-only**, and runs the same "today" sum ScreenWise's own dashboard uses (active + idle time, apps hidden in ScreenWise left out, and ScreenWise's own "day starts at" hour respected). Nothing needs to change in ScreenWise.
+**Why it works this way.** ScreenWise has no publisher/subscriber or API to connect to. It writes everything into a local SQLite database, `%APPDATA%\ScreenWise`. So DeskNotch simply **reads that file, read-only**, and runs the same "today" sum ScreenWise's own dashboard uses (active + idle time, apps hidden in ScreenWise left out, and ScreenWise's own "day starts at" hour respected). Nothing needs to change in ScreenWise.
 
 **Where.**
 - `main/ipc/desktime.ts`: opens the database with Node's built-in `node:sqlite` (no new package), IPC `desktime:screen-time` and `desktime:download`.
 - `renderer/hooks/useScreenTime.ts`: asks once on start (to know if ScreenWise is installed) and every 60 s while a screen-time view is picked.
 
-**DeskTime is now ScreenWise.** Your friend renamed the app. DeskNotch uses the new name everywhere you can see it, and finds the app under either name, so it works before and after the rename reaches users:
+**ScreenWise.** Your friend's app (formerly DeskTime) is now ScreenWise, downloaded from [bruhlabs.top](http://bruhlabs.top/). DeskNotch only recognises ScreenWise:
 
-- **Installed?** Windows' list of installed programs must contain **ScreenWise** or **DeskTime**.
-- **Data file**: looked for in this order: `%APPDATA%\ScreenWise\screenwise.db`, `%APPDATA%\ScreenWise\desktime.db`, `%APPDATA%\DeskTime\desktime.db`. If ScreenWise ends up saving somewhere else, add that path to `DB_FILES` in `main/ipc/desktime.ts`.
-- **Get ScreenWise** opens `github.com/ManasJhaMJ/DeskTime/releases`. It used to open `/releases/latest`, which was a 404, because every release there is a pre-release and GitHub's "latest" skips those. GitHub redirects this address once the repo is renamed.
+- **Installed?** Windows' list of installed programs must contain **ScreenWise**.
+- **Data file**: `%APPDATA%\ScreenWise\screenwise.db`, or `%APPDATA%\ScreenWise\desktime.db` if the file kept the old name. If ScreenWise saves somewhere else, add that path to `DB_FILES` in `main/ipc/desktime.ts`.
+- **Get ScreenWise** opens `http://bruhlabs.top/`.
 
 **Installed means installed.** DeskNotch checks Windows' list of installed programs, not just the database: uninstalling ScreenWise leaves its database behind in AppData, and reading that used to show old screen time for an app that was gone. The check runs at most once a minute, so installing ScreenWise unlocks the option within a minute.
-
-A different commercial product is also called "DeskTime" (desktime.com). If someone has that installed, DeskNotch thinks ScreenWise is there, finds no database, and shows "—".
 
 **Watch out.** ScreenWise saves to disk every 15 s, so the figure can lag slightly. If a future ScreenWise changes its database layout, the reading shows "—" instead of crashing.
 

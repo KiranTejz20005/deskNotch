@@ -164,7 +164,7 @@ The rule it follows: **nothing slow or blocking runs on main's event loop**, bec
 | AI limits | every 2 min while shown, min gap 60 s | one HTTPS call per provider; 5 min back-off after a failure | [limits.ts](main/ipc/limits.ts) |
 | Most used apps | once per 30 min | `reg query` + one PowerShell with a C# icon helper, ~2 to 4 s cold, then cached | [apps.ts](main/ipc/apps.ts) |
 | Foreground watch | 300 ms, only while Hide in fullscreen or Shrink over browsers is on; started 2 s after launch | one long-lived PowerShell with a C# helper: foreground window's monitor, fullscreen flag (covers the monitor and not `IsZoomed`) and process name; silent unless changed. Drives Hide in fullscreen and Shrink over browsers | [fullscreen.ts](main/fullscreen.ts) |
-| Screen time | every 60 s, only while picked | read-only open of ScreenWise's SQLite (`%APPDATA%\ScreenWise` (or the older `%APPDATA%\DeskTime`)) via Node's built-in `node:sqlite`, ScreenWise's own "today" sum | [desktime.ts](main/ipc/desktime.ts) |
+| Screen time | every 60 s, only while picked | read-only open of ScreenWise's SQLite (`%APPDATA%\ScreenWise`) via Node's built-in `node:sqlite`, ScreenWise's own "today" sum | [desktime.ts](main/ipc/desktime.ts) |
 | Usage page | every 2 s, only while the card is flipped to it | `os.cpus()` on request; one long-lived PowerShell reading the GPU perf counter (~1 s a sample, ~3 s the first time), killed 6 s after the last ask | [usage.ts](main/ipc/usage.ts) |
 
 ### Security model

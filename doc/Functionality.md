@@ -16,7 +16,7 @@ The always-visible strip, a fixed 240px. Space is tight, so these are glanceable
 - [x] **Focus countdown**: a tiny ring and the time left, while a session runs.
 - [x] **Now playing**: album art and a pulse (no title: too much for the bar); the glance card shows art, title, a live progress line and controls. Tap the art to bring the player forward, maximised.
 - [x] **Time**: 12-hour, on the left whenever no session or music is running.
-- [x] **Right of the bar**: the time, the AI limits as two rings (weekly outside, 5-hour inside) and `5h% / 7d%`, orange past 80%, or today's **screen time** from [ScreenWise](https://github.com/ManasJhaMJ/DeskTime/releases). Settings → Closed notch picks which; the time is not shown twice. Screen time is greyed out, with a **Get ScreenWise** link, until ScreenWise is installed.
+- [x] **Right of the bar**: the time, the AI limits as two rings (weekly outside, 5-hour inside) and `5h% / 7d%`, orange past 80%, or today's **screen time** from [ScreenWise](http://bruhlabs.top/). Settings → Closed notch picks which; the time is not shown twice. Screen time is greyed out, with a **Get ScreenWise** link, until ScreenWise is installed.
 - [x] **Privacy dots**: orange while any app uses the microphone, green for the camera, from Windows' own ConsentStore records.
 - [x] **Just connected moments**: headphones, a Wi-Fi network or a Bluetooth device connecting takes the bar for about a second and a half (icon, name, "Connected"), then it returns. No permanent Wi-Fi or Bluetooth icons.
 - [x] **AI usage**: plan limits for Claude (session, week) and Codex (its plan's windows), % used, from the same endpoints as `/usage` and `/status`. A failed read keeps the last good one (saved across restarts) and backs off after a rate limit.

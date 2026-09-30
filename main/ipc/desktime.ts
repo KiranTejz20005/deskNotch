@@ -1,8 +1,8 @@
 /**
- * Screen time from ScreenWise (formerly DeskTime, github.com/ManasJhaMJ/DeskTime), a separate app.
+ * Screen time from ScreenWise (bruhlabs.top), a separate app.
  *
- * DeskTime has no API or pub/sub: it keeps everything in a local SQLite file.
- * So it is read directly, read-only, with the same sum DeskTime's own
+ * ScreenWise has no API or pub/sub: it keeps everything in a local SQLite file.
+ * So it is read directly, read-only, with the same sum ScreenWise's own
  * dashboard and tray use for "screen time today". Not installed, no reading:
  * the notch's option stays greyed out with a download link.
  *
@@ -21,7 +21,7 @@ const UNINSTALL_KEYS = [
   'HKLM\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall',
   'HKLM\\Software\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall',
 ]
-const APP_NAME = /^\s*DisplayName\s+REG_SZ\s+(ScreenWise|DeskTime)\b/im
+const APP_NAME = /^\s*DisplayName\s+REG_SZ\s+ScreenWise\b/im
 
 /** Every DisplayName under one uninstall key, as `reg query` prints them. */
 const displayNames = (key: string) =>
@@ -29,7 +29,7 @@ const displayNames = (key: string) =>
     execFile('reg', ['query', key, '/s', '/v', 'DisplayName'], { windowsHide: true, maxBuffer: 8 << 20 }, (_error, stdout) => resolve(stdout ?? '')),
   )
 
-/** Whether ScreenWise (or DeskTime) is installed. Asked at most once a minute. */
+/** Whether ScreenWise is installed. Asked at most once a minute. */
 let installedCache: { at: number; value: boolean } | null = null
 const isInstalled = async () => {
   if (installedCache && Date.now() - installedCache.at < 60_000) return installedCache.value
@@ -38,21 +38,19 @@ const isInstalled = async () => {
   return value
 }
 
-// All its releases are pre-releases, which /releases/latest skips (a 404), so
-// the list. GitHub redirects this once the repo is renamed to ScreenWise.
-export const DESKTIME_URL = 'https://github.com/ManasJhaMJ/DeskTime/releases'
+/** ScreenWise's download page. */
+export const DESKTIME_URL = 'http://bruhlabs.top/'
 
-/** DeskTime is being renamed ScreenWise; its data folder and file follow the
- *  app's name, so both are looked for, the new name first. */
+/** ScreenWise's database, in its data folder (named after the app). Its file
+ *  may still carry the app's earlier name, so both are looked for. */
 const DB_FILES = [
   ['ScreenWise', 'screenwise.db'],
   ['ScreenWise', 'desktime.db'],
-  ['DeskTime', 'desktime.db'],
 ]
 const dbFile = () =>
   DB_FILES.map(([dir, file]) => path.join(process.env.APPDATA ?? '', dir, file)).find((file) => fs.existsSync(file)) ?? null
 
-/** DeskTime's own query (db.ts dayTotals): active + idle, hidden apps left out. */
+/** ScreenWise's own query (db.ts dayTotals): active + idle, hidden apps left out. */
 const TODAY_SQL = `
   SELECT COALESCE(SUM(u.screen), 0) AS screen FROM (
     SELECT app_id, end_ts - start_ts AS screen FROM sessions WHERE day = ?
@@ -61,7 +59,7 @@ const TODAY_SQL = `
   ) u JOIN apps a ON a.id = u.app_id JOIN apps e ON e.id = COALESCE(a.merged_into, a.id)
   WHERE e.hidden = 0`
 
-/** DeskTime's day label: late nights before its day-start hour count toward yesterday. */
+/** ScreenWise's day label: late nights before its day-start hour count toward yesterday. */
 const dayLabel = (now: Date, dayStartHour: number) => {
   const d = new Date(now)
   if (d.getHours() < dayStartHour) d.setDate(d.getDate() - 1)
@@ -89,7 +87,7 @@ async function readScreenTime(): Promise<ScreenTime> {
     const row = db.prepare(TODAY_SQL).get(day, day) as { screen: number }
     return { installed: true, ms: Number(row.screen) }
   } catch (err) {
-    // A schema change in a newer DeskTime, or the file mid-migration.
+    // A schema change in a newer ScreenWise, or the file mid-migration.
     console.error('[desktime] read failed:', err)
     return { installed: true, ms: null }
   } finally {
