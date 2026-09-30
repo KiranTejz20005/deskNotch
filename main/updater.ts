@@ -11,9 +11,16 @@
  * electron-updater verify them too.
  */
 import { app, BrowserWindow, ipcMain } from 'electron'
-// Named, not default: the package marks itself __esModule, so webpack's
-// default import reads a `.default` it does not have (undefined at start-up).
-import { autoUpdater } from 'electron-updater'
+// A namespace import, read both ways, because the two builds load this
+// CommonJS package differently and each broke on one form:
+// - packaged (real ES module import): its exports sit under `default`, and a
+//   named `autoUpdater` import is a SyntaxError that stops the app launching;
+// - dev (webpack's CommonJS interop): there is no `default`, the exports are
+//   the namespace itself.
+import * as electronUpdater from 'electron-updater'
+
+type Updater = typeof import('electron-updater')
+const { autoUpdater } = ((electronUpdater as unknown as { default?: Updater }).default ?? electronUpdater) as Updater
 
 export type UpdateState =
   | { status: 'dev' | 'store' | 'idle' | 'checking' | 'none' | 'error'; version: string }
