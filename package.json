@@ -9,6 +9,13 @@
   "appId": "com.devezio.desknotch",
   "type": "module",
   "main": "app/main.js",
+  "scripts": {
+    "dev": "npm run clean:port && node scripts/patch-nextron.cjs && nextron --startup-delay 20000",
+    "dev:norestart": "node scripts/patch-nextron.cjs && set NEXTRON_NO_RESTART=1 && nextron --startup-delay 20000",
+    "build": "nextron build",
+    "clean:port": "npx --yes kill-port 8888",
+    "postinstall": "electron-builder install-app-deps"
+  },
   "dependencies": {
     "@coooookies/windows-smtc-monitor": "^1.0.12",
     "bot-avatars": "^0.1.1",
@@ -20,5 +27,19 @@
     "motion": "^13.4.0",
     "tailwind-merge": "^3.7.0",
     "thinking-orbs": "^0.3.2"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.3.3",
+    "@types/node": "^24.13.3",
+    "@types/react": "^19.2.14",
+    "electron": "^43.3.0",
+    "electron-builder": "^26.15.3",
+    "next": "^16.3.0",
+    "nextron": "^10.3.0",
+    "postcss": "^8.5.26",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^7.0.2"
   }
 }
