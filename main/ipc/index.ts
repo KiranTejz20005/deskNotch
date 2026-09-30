@@ -18,6 +18,7 @@ import { setupDndIpc } from './dnd'
 import { setupNotificationsIpc } from './notifications'
 import { setupThermalsIpc } from './thermals'
 import { registerShortcutIpc } from './shortcut'
+import { registerDesktimeIpc } from './desktime'
 
 export function registerIpc() {
   registerStoreIpc()
@@ -39,5 +40,5 @@ export function registerIpc() {
   setupNotificationsIpc()
   setupThermalsIpc()
   registerShortcutIpc()
+  registerDesktimeIpc()
 }
-

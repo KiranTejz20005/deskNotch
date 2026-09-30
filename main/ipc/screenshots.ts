@@ -33,14 +33,40 @@ const settled = async (file: string) => {
   return false
 }
 
-/** Discards a capture: to the Recycle Bin, so a slip can be undone. Only files
- *  in the screenshot folders, so this can never be pointed anywhere else. */
+/** An image directly inside a screenshot folder: the only files the capture
+ *  card may touch, so these handlers can never be pointed anywhere else. */
+const isCapture = (file: string) => IMAGE.test(file) && folders().some((dir) => path.dirname(file) === path.resolve(dir))
+
+/** Discards a capture: to the Recycle Bin, so a slip can be undone. */
 ipcMain.handle('screenshot:discard', async (_event, file: unknown) => {
   if (typeof file !== 'string') return false
   const resolved = path.resolve(file)
-  if (!IMAGE.test(resolved) || !folders().some((dir) => path.dirname(resolved) === path.resolve(dir))) return false
+  if (!isCapture(resolved)) return false
   await shell.trashItem(resolved)
   return true
+})
+
+/** Renames a capture in its folder, keeping its extension. The new path, or
+ *  null when the name is empty or already taken, or Windows refuses it. */
+ipcMain.handle('screenshot:rename', async (_event, file: unknown, name: unknown) => {
+  if (typeof file !== 'string' || typeof name !== 'string') return null
+  const resolved = path.resolve(file)
+  if (!isCapture(resolved)) return null
+  // Characters Windows forbids in a name, and trailing dots or spaces it drops.
+  const base = name.replace(/[<>:"/\\|?*\x00-\x1f]/g, '').trim().replace(/[. ]+$/, '')
+  if (!base) return null
+  const target = path.join(path.dirname(resolved), base + path.extname(resolved))
+  if (target === resolved) return resolved
+  // A change of case only is the same file to Windows, not a clash.
+  if (target.toLowerCase() !== resolved.toLowerCase() && fs.existsSync(target)) return null
+  // The watcher sees the new name as a new file; it is not a new capture.
+  seen.add(target)
+  try {
+    await fs.promises.rename(resolved, target)
+    return target
+  } catch {
+    return null
+  }
 })
 
 export function startScreenshotWatch() {

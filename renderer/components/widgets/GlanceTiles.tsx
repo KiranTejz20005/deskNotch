@@ -59,79 +59,79 @@ export const MediaTile: React.FC<{ media: NowPlaying; tint: string }> = ({ media
   const elapsed = progress * media.duration
 
   return (
-  <Tile
-    width={MEDIA_WIDTH}
-    tinted
-    glow={`radial-gradient(70% 150% at 14% 50%, rgba(${tint}, 0.4), rgba(${tint}, 0.08) 55%, transparent 78%)`}
-  >
-    <div className="flex h-full items-stretch gap-3.5">
-      {/* The art is the way in: tap it and the player comes forward, maximised. */}
-      <motion.button
-        type="button"
-        aria-label="Open the player"
-        title="Open the player"
-        onClick={(event) => {
-          event.stopPropagation()
-          void window.bridge?.invoke('media:focus', media.sourceAppId)
-        }}
-        whileTap={{ scale: 0.95 }}
-        className="group relative aspect-square h-full shrink-0 overflow-hidden rounded-[12px] bg-white/[0.06]"
-        animate={{ scale: media.isPlaying ? 1 : 0.94, opacity: media.isPlaying ? 1 : 0.7 }}
-        transition={spring}
-      >
-        {media.thumbnailUrl && (
-          <img src={media.thumbnailUrl} alt="" className="absolute inset-0 h-full w-full object-cover" />
-        )}
-        <div className="absolute inset-0 rounded-[12px] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.1)]" />
-        <div className="absolute inset-0 grid place-items-center bg-black/50 opacity-0 transition-opacity group-hover:opacity-100">
-          <Maximize2 size={16} strokeWidth={2} className="text-white" />
-        </div>
-      </motion.button>
-
-      <div className="flex min-w-0 flex-1 flex-col justify-between py-0.5">
-        <div className="min-w-0">
-          {/* Where it is playing, and that it is: the source, with the bars. */}
-          <div className="mb-1 flex items-center gap-1.5">
-            <Bars playing={media.isPlaying} color={`rgb(${tint})`} />
-            <span className="truncate text-[8.5px] font-bold uppercase leading-none tracking-[0.12em] text-white/40">
-              {media.isPlaying ? playerName(media.sourceAppId) : `Paused · ${playerName(media.sourceAppId)}`}
-            </span>
-          </div>
-          <ScrollingText className="text-[14px] font-semibold leading-tight tracking-[-0.01em] text-white">
-            {media.title}
-          </ScrollingText>
-          <span className="mt-0.5 block truncate text-[11.5px] leading-tight text-white/50">{media.artist}</span>
-        </div>
-        <div>
-          {/* Where the track is: a hairline, not a scrubber; this is a glance. */}
-          {media.duration > 0 && (
-            <>
-              <div className="h-[3px] overflow-hidden rounded-full bg-white/[0.12]">
-                <motion.div
-                  className="h-full origin-left rounded-full"
-                  style={{ background: `rgb(${tint})`, boxShadow: `0 0 6px rgba(${tint}, 0.6)` }}
-                  animate={{ scaleX: progress }}
-                  transition={{ ease: 'linear', duration: 0.5 }}
-                />
-              </div>
-              <div className="mt-1 flex justify-between text-[9.5px] tabular-nums leading-none text-white/40">
-                <span>{mmss(elapsed)}</span>
-                <span>-{mmss(media.duration - elapsed)}</span>
-              </div>
-            </>
+    <Tile
+      width={MEDIA_WIDTH}
+      tinted
+      glow={`radial-gradient(70% 150% at 14% 50%, rgba(${tint}, 0.4), rgba(${tint}, 0.08) 55%, transparent 78%)`}
+    >
+      <div className="flex h-full items-stretch gap-3.5">
+        {/* The art is the way in: tap it and the player comes forward, maximised. */}
+        <motion.button
+          type="button"
+          aria-label="Open the player"
+          title="Open the player"
+          onClick={(event) => {
+            event.stopPropagation()
+            void window.bridge?.invoke('media:focus', media.sourceAppId)
+          }}
+          whileTap={{ scale: 0.95 }}
+          className="group relative aspect-square h-full shrink-0 overflow-hidden rounded-[12px] bg-white/[0.06]"
+          animate={{ scale: media.isPlaying ? 1 : 0.94, opacity: media.isPlaying ? 1 : 0.7 }}
+          transition={spring}
+        >
+          {media.thumbnailUrl && (
+            <img src={media.thumbnailUrl} alt="" className="absolute inset-0 h-full w-full object-cover" />
           )}
-          <div className="-mb-1 mt-1 flex justify-center">
-            <MediaControls
-              isPlaying={media.isPlaying}
-              onPrevious={() => void window.bridge?.invoke('media:key', 'previous')}
-              onPlayPause={() => void window.bridge?.invoke('media:key', 'play-pause')}
-              onNext={() => void window.bridge?.invoke('media:key', 'next')}
-            />
+          <div className="absolute inset-0 rounded-[12px] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.1)]" />
+          <div className="absolute inset-0 grid place-items-center bg-black/50 opacity-0 transition-opacity group-hover:opacity-100">
+            <Maximize2 size={16} strokeWidth={2} className="text-white" />
+          </div>
+        </motion.button>
+
+        <div className="flex min-w-0 flex-1 flex-col justify-between py-0.5">
+          <div className="min-w-0">
+            {/* Where it is playing, and that it is: the source, with the bars. */}
+            <div className="mb-1 flex items-center gap-1.5">
+              <Bars playing={media.isPlaying} color={`rgb(${tint})`} />
+              <span className="truncate text-[8.5px] font-bold uppercase leading-none tracking-[0.12em] text-white/40">
+                {media.isPlaying ? playerName(media.sourceAppId) : `Paused · ${playerName(media.sourceAppId)}`}
+              </span>
+            </div>
+            <ScrollingText className="text-[14px] font-semibold leading-tight tracking-[-0.01em] text-white">
+              {media.title}
+            </ScrollingText>
+            <span className="mt-0.5 block truncate text-[11.5px] leading-tight text-white/50">{media.artist}</span>
+          </div>
+          <div>
+            {/* Where the track is: a hairline, not a scrubber; this is a glance. */}
+            {media.duration > 0 && (
+              <>
+                <div className="h-[3px] overflow-hidden rounded-full bg-white/[0.12]">
+                  <motion.div
+                    className="h-full origin-left rounded-full"
+                    style={{ background: `rgb(${tint})`, boxShadow: `0 0 6px rgba(${tint}, 0.6)` }}
+                    animate={{ scaleX: progress }}
+                    transition={{ ease: 'linear', duration: 0.5 }}
+                  />
+                </div>
+                <div className="mt-1 flex justify-between text-[9.5px] tabular-nums leading-none text-white/40">
+                  <span>{mmss(elapsed)}</span>
+                  <span>-{mmss(media.duration - elapsed)}</span>
+                </div>
+              </>
+            )}
+            <div className="-mb-1 mt-1 flex justify-center">
+              <MediaControls
+                isPlaying={media.isPlaying}
+                onPrevious={() => void window.bridge?.invoke('media:key', 'previous')}
+                onPlayPause={() => void window.bridge?.invoke('media:key', 'play-pause')}
+                onNext={() => void window.bridge?.invoke('media:key', 'next')}
+              />
+            </div>
           </div>
         </div>
       </div>
-    </div>
-  </Tile>
+    </Tile>
   )
 }
 
@@ -160,12 +160,9 @@ export const TimeTile: React.FC = () => {
   )
 }
 
-
 /**
  * Tasks, the way the Reminders widget does it: a coloured title and a count,
- * then the next few as rows with a round checkbox. Ticking one fills the
- * circle, strikes the text, and lets the row slide away a beat later, so the
- * list settles rather than jumps.
+ * then the next few as rows with a round checkbox.
  */
 export const TaskTile: React.FC<{
   tasks: TaskStore

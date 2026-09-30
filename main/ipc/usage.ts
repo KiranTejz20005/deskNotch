@@ -37,13 +37,19 @@ while ($true) {
   Start-Sleep -Milliseconds 500
 }`
 
+/** How long after the last ask the sampler is kept: the page polls every 2 s. */
+const IDLE = 6000
+
 let sampler: ChildProcess | null = null
 let gpu: number | null = null
+let wantedUntil = 0
+let reaper: ReturnType<typeof setInterval> | undefined
 
 const stop = () => {
   sampler?.kill()
   sampler = null
-  gpu = null
+  clearInterval(reaper)
+  reaper = undefined
 }
 
 const start = () => {
@@ -65,6 +71,11 @@ const start = () => {
   sampler.on('exit', () => {
     sampler = null
   })
+  // Without this the sampler (~90 MB, a Get-Counter over every GPU engine each
+  // second) ran for the app's whole life.
+  reaper = setInterval(() => {
+    if (Date.now() > wantedUntil) stop()
+  }, 2000)
 }
 
 /** Busy share of every core since the last call. */
@@ -84,15 +95,15 @@ const cpu = () => {
 }
 
 export function registerUsageIpc() {
-  // Start GPU sampler early in background for instant UI response
-  setTimeout(start, 500)
-
+  // Asking is what keeps the sampler alive; the reaper stops it once nobody
+  // has asked for a while. The last GPU reading is kept, so the page shows it
+  // at once when it comes back while a fresh one arrives.
   ipcMain.handle('usage:get', (): Usage => {
+    wantedUntil = Date.now() + IDLE
     start()
     return { cpu: cpu(), memory: 1 - os.freemem() / os.totalmem(), gpu }
   })
 }
-
 
 export function stopUsageIpc() {
   stop()

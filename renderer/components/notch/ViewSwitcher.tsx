@@ -49,12 +49,12 @@ export const RailButton: React.FC<{
       event.stopPropagation()
       onClick()
     }}
-    className={`group/rail relative grid h-[24px] w-[24px] shrink-0 place-items-center rounded-full outline-none transition-colors duration-200 ${
+    className={`group/rail relative grid h-[var(--dock-btn,24px)] w-[var(--dock-btn,24px)] shrink-0 place-items-center rounded-full outline-none transition-colors duration-200 ${
       active ? 'text-black' : 'text-white/45 hover:bg-white/[0.1] hover:text-white'
     }`}
   >
-    {active && <motion.span layoutId={layoutId} transition={spring} className="absolute inset-0 rounded-full bg-white" />}
-    <span className="relative">{children}</span>
+    {active && <motion.span layoutId={layoutId ? `${layoutId}-${side}` : undefined} transition={spring} className="absolute inset-0 rounded-full bg-white" />}
+    <span className="relative [transform:scale(var(--dock-icon,1))]">{children}</span>
     <span className={railLabel(side)}>{label}</span>
   </motion.button>
   )

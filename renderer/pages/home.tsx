@@ -18,7 +18,7 @@ import { NotchChassis, CHROME_X, CHROME_Y, PAD } from '../components/notch/Notch
 import { AmbientVideo } from '../components/notch/AmbientVideo'
 import { CollapsedStatus, type Moment } from '../components/notch/CollapsedStatus'
 import { ViewRail, RailButton, type ViewDefinition } from '../components/notch/ViewSwitcher'
-import { SettingsPanel, DEFAULT_SETTINGS, SETTINGS_PANE, type Settings } from '../components/widgets/SettingsPanel'
+import { SettingsPanel, DEFAULT_SETTINGS, DOCK_SCALE, SETTINGS_PANE, type Settings } from '../components/widgets/SettingsPanel'
 import { DeskView, DESK_WIDTH, DESK_HEIGHT } from '../components/widgets/DeskView'
 import { FEATURE_CARD_WIDTH, FEATURE_CARD_HEIGHT } from '../components/ui/FeatureCard'
 import { AppsRow } from '../components/widgets/AppsRow'
@@ -26,9 +26,11 @@ import { useFocusLog } from '../hooks/useFocusLog'
 import { FileStrip, SHELF_HEIGHT, shelfWidth } from '../components/widgets/FileStrip'
 import { CaptureView, CAPTURE_HEIGHT, CAPTURE_WIDTH } from '../components/widgets/CaptureView'
 import { DoneView, DONE_HEIGHT, DONE_WIDTH } from '../components/widgets/DoneView'
+import { ReminderView, REMINDER_HEIGHT, REMINDER_WIDTH } from '../components/widgets/ReminderView'
+import { useReminders, type Reminder } from '../hooks/useReminders'
 import type { FileItem } from '../hooks/useFiles'
 import { botAvatarPalette } from 'bot-avatars'
-import { CompanionTile, COMPANION_WIDTH, COMPANION_OPEN_WIDTH, COMPANION_TIME_WIDTH, type CompanionMode } from '../components/widgets/CompanionTile'
+import { CompanionTile, COMPANION_WIDTH, COMPANION_OPEN_WIDTH, COMPANION_REMINDER_WIDTH, COMPANION_TIME_WIDTH, type CompanionMode } from '../components/widgets/CompanionTile'
 import { MediaTile, TimeTile, TaskTile, MEDIA_WIDTH, TIME_WIDTH, TASK_WIDTH } from '../components/widgets/GlanceTiles'
 import { VolumeTile } from '../components/widgets/VolumeTile'
 import { StopwatchTile } from '../components/widgets/StopwatchTile'
@@ -42,6 +44,7 @@ import { StatusTile, STATUS_WIDTH, statusShown, type StatusPage } from '../compo
 import { AiOrbs, providerWidth, visibleLimits } from '../components/widgets/AiOrbs'
 import { AloneContext, TILE, TILE_GAP } from '../components/ui/tile'
 import { MAX_CARDS } from '../lib/glance'
+import { onStoreChange } from '../lib/store'
 import { usePhoto } from '../hooks/usePhoto'
 import { useNowPlaying } from '../hooks/useNowPlaying'
 import { useDominantColor } from '../hooks/useDominantColor'
@@ -54,6 +57,7 @@ import { useHeadphones } from '../hooks/useHeadphones'
 import { useWeather } from '../hooks/useWeather'
 import { useBattery } from '../hooks/useBattery'
 import { useBluetoothBattery } from '../hooks/useBluetoothBattery'
+import { useScreenTime } from '../hooks/useScreenTime'
 
 /** The places to go, as circles on the dock. Settings is a control, not a
  *  place, so it sits after them with the lock. */
@@ -109,12 +113,13 @@ export default function HomePage() {
   const wallpaperColor = useWallpaperColor()
   const timer = useTimer()
   const tasks = useTasks()
-  useFocusLog(timer)
+  const reminders = useReminders()
+  const focusLog = useFocusLog(timer)
   const [view, setView] = useState('glance')
+
   // A file dragged over the notch from outside: open Files, where the shelf is
   // waiting to take it.
   const [dragging, setDragging] = useState(false)
-  // The shelf's size follows what is on it: a slim well, widening per file.
   const [shelfCount, setShelfCount] = useState(0)
   useEffect(() => {
     let depth = 0
@@ -134,10 +139,7 @@ export default function HomePage() {
       depth = 0
       setDragging(false)
     }
-    // A drop anywhere on the notch lands on the shelf, not only on its well
-    // (which handles its own drops and marks them handled). If the shelf is
-    // not on screen yet (the notch was still opening), the paths are saved
-    // straight to its list and it shows them when it appears.
+
     const drop = (event: DragEvent) => {
       end()
       if (event.defaultPrevented || !hasFiles(event)) return
@@ -153,7 +155,7 @@ export default function HomePage() {
           ?.invoke<string[]>('store:get', 'shelf')
           .then((list) => window.bridge?.invoke('store:set', 'shelf', [...(list ?? []).filter((p) => !paths.includes(p)), ...paths]))
     }
-    // Anything dropped outside a drop target must not navigate the window.
+
     const over = (event: DragEvent) => hasFiles(event) && event.preventDefault()
     window.addEventListener('dragenter', enter)
     window.addEventListener('dragleave', leave)
@@ -173,8 +175,7 @@ export default function HomePage() {
   const [statusPage, setStatusPage] = useState<StatusPage>('now')
 
   // Moments: something happens while the notch is closed (a screenshot, a
-  // focus session ending), so it opens on it by itself for a few seconds,
-  // then folds away (hovering keeps it) and the view before it comes back.
+  // focus session ending), so it opens on it by itself for a few seconds.
   const [capture, setCapture] = useState<FileItem | null>(null)
   const [holdOpen, setHoldOpen] = useState(false)
   const [closeKey, setCloseKey] = useState(0)
@@ -197,7 +198,6 @@ export default function HomePage() {
   useEffect(
     () =>
       window.bridge?.on<string>('screenshot:new', async (file) => {
-        // Switched off, or open and in use: do not pull the notch out from under the user.
         if (!catchScreenshots.current || notchOpen.current) return
         const [item] = (await window.bridge?.invoke<FileItem[]>('files:describe', [file])) ?? []
         if (!item) return
@@ -221,9 +221,9 @@ export default function HomePage() {
       unsubOpen?.()
     }
   }, [view])
+
   const openChanged = (open: boolean) => {
     notchOpen.current = open
-    // Folded away: reset to the main Glance view so hovering always opens on Glance.
     if (!open) {
       setView('glance')
       beforePeek.current = null
@@ -238,9 +238,6 @@ export default function HomePage() {
   const battery = useBattery()
   const bluetooth = useBluetoothBattery()
 
-  // "Just connected" moments on the closed bar: headphones, a Wi-Fi network,
-  // a Bluetooth device. Each shows for a beat. What is already connected when
-  // the app starts is not news, so changes count only after a short warm-up.
   const [moment, setMoment] = useState<Moment | null>(null)
   const momentTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const lastHeadphones = useRef(0)
@@ -252,42 +249,39 @@ export default function HomePage() {
       clearTimeout(momentTimer.current)
     }
   }, [])
+
   const show = (next: Moment) => {
     setMoment(next)
     clearTimeout(momentTimer.current)
     momentTimer.current = setTimeout(() => setMoment(null), 1600)
   }
+
   useEffect(() => {
     if (!headphones) return
     lastHeadphones.current = Date.now()
     show({ kind: 'headphones', name: headphones })
   }, [headphones])
+
   const wifiName = privacy.wifi?.name ?? null
   const lastWifi = useRef<string | null>(null)
   useEffect(() => {
     if (warm.current && wifiName && wifiName !== lastWifi.current) show({ kind: 'wifi', name: wifiName })
     lastWifi.current = wifiName
   }, [wifiName])
+
   useArrivals(
     privacy.bluetooth.map((device) => device.name),
     (name) => {
       const charge = privacy.bluetooth.find((device) => device.name === name)?.battery
-      // Headphones already had their moment a moment ago: one is enough,
-      // unless this one brings the charge, which that one could not know.
       const said = Date.now() - lastHeadphones.current < 30000
       if (!warm.current || (said && charge == null)) return
       show({ kind: 'bluetooth', name, detail: charge == null ? undefined : `Connected · ${charge}%` })
     },
   )
 
-  // An app taking the microphone or camera: its name, in the dot's colour.
-  // Whatever was already in use when the app started is not news either.
   useArrivals(privacy.micApps, (name) => warm.current && show({ kind: 'mic', name, detail: 'Microphone' }))
   useArrivals(privacy.cameraApps, (name) => warm.current && show({ kind: 'camera', name, detail: 'Camera' }))
 
-  // The battery: unplugging and plugging in each get a moment with the charge,
-  // and running low gets one at each step down. A desktop never changes state,
-  // so it never says anything; the state at start is not news.
   const lastCharging = useRef<boolean | null>(null)
   useEffect(() => {
     if (!battery.supported) return
@@ -296,7 +290,7 @@ export default function HomePage() {
       show(battery.charging ? { kind: 'charging', name: 'Charging', detail: charge } : { kind: 'battery', name: 'On battery', detail: charge })
     lastCharging.current = battery.charging
   }, [battery.supported, battery.charging])
-  /** The lowest step already warned about; charging starts over. */
+
   const warnedAt = useRef(1)
   useEffect(() => {
     if (!battery.supported) return
@@ -312,15 +306,9 @@ export default function HomePage() {
 
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS)
   const settingsLoaded = useRef(false)
-  // With nothing chosen, the AI readings stand in rather than an empty notch —
-  // so they are fetched then too. Otherwise nothing is asked of Anthropic or
-  // OpenAI while the readings are switched off.
-  // Settings also needs them, to count the cards a switch would add.
   const nothingChosen = !settings.showAvatar && !settings.showMusic && !settings.showTasks && !settings.showFocus
-  // The companion also needs them when it has been asked to talk about AI.
-  const companionWantsAi = settings.showAvatar && settings.companionMode === 'ai'
   const collapsedWantsAi = settings.collapsedRight === 'ai'
-  const aiLimits = useAiLimits(settings.showAiUsage || nothingChosen || view === 'settings' || view === 'desk' || companionWantsAi || collapsedWantsAi)
+  const aiLimits = useAiLimits(settings.showAiUsage || nothingChosen || view === 'settings' || collapsedWantsAi)
 
   useEffect(() => {
     window.bridge
@@ -329,14 +317,19 @@ export default function HomePage() {
         const loadedSettings: Settings = {
           ...DEFAULT_SETTINGS,
           ...stored,
-          // Translucent became Glass, now a real blur.
-          notchStyle: (stored?.notchStyle as string) === 'translucent' ? 'glass' : (stored?.notchStyle ?? DEFAULT_SETTINGS.notchStyle),
-          // Focus lives in the companion now; the glance card is retired.
+          notchStyle:
+            (stored?.notchStyle as string) === 'translucent'
+              ? 'glass'
+              : (stored?.notchStyle as string) === 'mica'
+                ? 'black'
+                : (stored?.notchStyle ?? DEFAULT_SETTINGS.notchStyle),
           showFocus: false,
-          // Older settings kept a list of topics under another name; the first
-          // one becomes the mode.
           companionMode:
-            stored?.companionMode ??
+            ((stored?.companionMode as string) === 'ai'
+              ? 'screen'
+              : (stored?.companionMode as string) === 'tasks'
+                ? 'reminder'
+                : stored?.companionMode) ??
             ((Array.isArray((stored as any)?.companionSays) && (stored as any)?.companionSays[0]) as CompanionMode | undefined) ??
             DEFAULT_SETTINGS.companionMode,
         }
@@ -359,6 +352,18 @@ export default function HomePage() {
       })
   }, [])
 
+  useEffect(() => onStoreChange<Settings>('settings', setSettings), [])
+
+  const screenTime = useScreenTime(settings.collapsedRight === 'screen' || (settings.showAvatar && settings.companionMode === 'screen'))
+  const collapsedRight = settings.collapsedRight === 'screen' && !screenTime.installed ? 'time' : (settings.collapsedRight ?? 'time')
+  const companionMode = settings.companionMode === 'screen' && !screenTime.installed ? 'focus' : settings.companionMode
+
+  const [tucked, setTucked] = useState(false)
+  useEffect(() => {
+    void window.bridge?.invoke<boolean>('notch:tucked').then((t) => setTucked(Boolean(t)))
+    return window.bridge?.on<boolean>('notch:tucked', setTucked)
+  }, [])
+
   useEffect(() => {
     if (!settingsLoaded.current) return
     void window.bridge?.invoke('store:set', 'settings', settings)
@@ -367,16 +372,11 @@ export default function HomePage() {
 
   catchScreenshots.current = settings.catchScreenshots ?? true
 
-  // Tabs taken off the dock. On a hidden one, move to the first still shown;
-  // with none shown, the notch simply opens on the glance.
   const shownViews = VIEWS.filter((v) => !(settings.hiddenViews ?? []).includes(v.id))
   useEffect(() => {
     if (VIEWS.some((v) => v.id === view) && !shownViews.some((v) => v.id === view)) setView(shownViews[0]?.id ?? 'glance')
   }, [settings.hiddenViews, view])
 
-  // The apps bar's place: on the right when the tabs dock is under the notch
-  // (so the two do not stack), otherwise under the notch; or wherever chosen.
-  // They never share a side: a chosen side the dock already has (older settings) falls back to auto.
   const chosenApps = settings.appsSide ?? 'auto'
   const dockSideNow = settings.dockSide ?? 'bottom'
   const appsSide = chosenApps === 'auto' || chosenApps === dockSideNow ? (dockSideNow === 'bottom' ? 'right' : 'bottom') : chosenApps
@@ -385,25 +385,33 @@ export default function HomePage() {
   const orbTint = '255, 255, 255'
 
   const shownLimits = settings.showAiUsage || nothingChosen ? visibleLimits(aiLimits, settings.hiddenLimits) : []
-  // What the companion may speak about: the chosen windows, whether or not their cards are on.
   const companionLimits = visibleLimits(aiLimits, settings.hiddenLimits)
-  /** The companion's colour, which the desk borrows so both views agree. */
   const accent = settings.avatar === 'photo' ? '#ffffff' : botAvatarPalette[settings.avatar]
   const showCompanion = settings.showAvatar && (settings.avatar !== 'photo' || Boolean(photo))
 
-  // A focus session just ended: the notch opens on the Done card alone for a
-  // few seconds, wherever the timer was started. Already open on a view that
-  // shows the timer (the glance's focus companion, the desk), it says Done there.
+  const [ringing, setRinging] = useState<Reminder | null>(null)
+  const rung = useRef(new Set<string>())
+  useEffect(() => {
+    const due = reminders.due
+    if (!due || rung.current.has(`${due.id}@${due.at}`)) return
+    rung.current.add(`${due.id}@${due.at}`)
+    setRinging(due)
+    peek('reminder', 60_000)
+  }, [reminders.due?.id, reminders.due?.at])
+
+  const endRing = () => {
+    setHoldOpen(false)
+    setCloseKey((k) => k + 1)
+  }
+
   const wasFinished = useRef(timer.finished)
   useEffect(() => {
-    const showsTimer = view === 'desk' || (view === 'glance' && showCompanion && settings.companionMode === 'focus')
+    const showsTimer = view === 'desk' || (view === 'glance' && showCompanion && companionMode === 'focus')
     if (timer.finished && !wasFinished.current && !(notchOpen.current && showsTimer)) peek('done', 6000)
     wasFinished.current = timer.finished
   }, [timer.finished])
+
   const media = settings.showMusic && nowPlaying?.title ? nowPlaying : null
-  // Focus takes the task into its own card, so the task card only stands
-  // alone without it. The time card is the last resort: only when there is
-  // nothing else at all, not even an AI reading.
   const showTaskCard = settings.showTasks && !settings.showFocus
   const showTime = !showCompanion && !media && !showTaskCard && !settings.showFocus && shownLimits.length === 0
   const showStatus = settings.showStatus && (statusShown(privacy, battery) || statusPage === 'usage')
@@ -418,12 +426,13 @@ export default function HomePage() {
       ? {
           id: 'companion',
           width:
-            (hubOpen && settings.companionMode === 'tasks') ||
-            (hubOpen && settings.companionMode === 'focus' && !timer.isRunning && !(timer.remainingMs > 0 && !timer.finished))
+            (hubOpen && companionMode === 'focus' && !timer.isRunning && !(timer.remainingMs > 0 && !timer.finished))
               ? COMPANION_OPEN_WIDTH
-              : hubOpen && settings.companionMode === 'time'
-                ? COMPANION_TIME_WIDTH
-                : COMPANION_WIDTH,
+              : hubOpen && companionMode === 'reminder'
+                ? COMPANION_REMINDER_WIDTH
+                : hubOpen && companionMode === 'time'
+                  ? COMPANION_TIME_WIDTH
+                  : COMPANION_WIDTH,
         }
       : null,
     media ? { id: 'media', width: MEDIA_WIDTH } : null,
@@ -433,7 +442,6 @@ export default function HomePage() {
     showStatus ? { id: 'status', width: STATUS_WIDTH } : null,
   ].filter((c): c is EnabledCard => c !== null)
 
-  // Strictly cap Glance active cards at MAX_CARDS (4)
   const visibleGlanceCards = allActiveCards.slice(0, MAX_CARDS)
   const visibleCardIds = new Set(visibleGlanceCards.map((c) => c.id))
 
@@ -453,12 +461,14 @@ export default function HomePage() {
           ? { width: CAPTURE_WIDTH, height: CHROME_Y + CAPTURE_HEIGHT }
           : view === 'done'
             ? { width: DONE_WIDTH, height: CHROME_Y + DONE_HEIGHT }
+          : view === 'reminder'
+            ? { width: REMINDER_WIDTH, height: CHROME_Y + REMINDER_HEIGHT }
           : SIZES[view]
 
   return (
     <React.Fragment>
       <Head>
-        <title>deskNotch</title>
+        <title>DeskNotch</title>
       </Head>
       <div className="w-full h-full flex justify-center items-start pointer-events-none">
         <div className="pointer-events-auto">
@@ -466,10 +476,10 @@ export default function HomePage() {
             notchStyle={settings.notchStyle}
             bgTint={wallpaperColor}
             ambient={(isOpen) => (
-              // Only behind the glance, and only when the music it belongs to is shown.
               <AmbientVideo
                 active={settings.ambientVideo && settings.showMusic && isOpen && isPlayingAudio && view === 'glance'}
-               accent={accent} />
+                accent={accent}
+              />
             )}
             expandedWidth={size.width}
             expandedHeight={size.height}
@@ -488,8 +498,10 @@ export default function HomePage() {
             }
             onOpenChange={openChanged}
             closeKey={closeKey}
+            tucked={tucked}
+            dockScale={DOCK_SCALE[settings.dockSize ?? 'default'] ?? 1}
             rail={
-              view === 'capture' || view === 'done' ? undefined : (
+              view === 'capture' || view === 'done' || view === 'reminder' ? undefined : (
                 <div className="flex items-center gap-1 overflow-x-auto scrollbar-none max-w-full">
                   <ViewRail views={shownViews} active={view} onChange={setView} />
                   <RailButton
@@ -515,34 +527,50 @@ export default function HomePage() {
                 >
                   {view === 'glance' ? (
                     <AloneContext.Provider value={widths.length === 1}>
-                    <div className={`relative flex h-full items-start ${widths.length === 1 ? 'justify-center' : ''}`} style={{ gap: TILE_GAP }}>
-                      {visibleCardIds.has('companion') && (
-                        <CompanionTile
-                          avatar={settings.avatar}
-                          photo={photo}
-                          tasks={tasks}
-                          timer={timer}
-                          limits={companionLimits}
-                          track={nowPlaying?.title ?? null}
-                          playing={isPlayingAudio}
-                          mode={settings.companionMode}
-                          sleeps={settings.companionSleeps ?? 'time'}
-                          minutes={settings.focusMinutes ?? 25}
-                          onMinutes={(m) => setSettings((s) => ({ ...s, focusMinutes: m }))}
-                          open={hubOpen}
-                          onToggle={() => setHubOpen((o) => !o)}
-                        />
-                      )}
-                      {visibleCardIds.has('media') && media && <MediaTile media={media} tint={albumTint} />}
-                      {visibleCardIds.has('time') && <TimeTile />}
-                      {visibleCardIds.has('task') && <TaskTile tasks={tasks} accent={accent} timer={timer} onOpenDesk={() => setView('desk')} />}
-                      {visibleCardIds.has('focus') && (
-                        <FocusTile timer={timer} tasks={settings.showTasks ? tasks : undefined} minutes={settings.focusMinutes ?? 25} />
-                      )}
-                      {visibleCardIds.has('status') && showStatus && <StatusTile privacy={privacy} battery={battery} accent={accent} page={statusPage} onPage={setStatusPage} />}
-                      <AiOrbs providers={aiShown} tint={orbTint} />
-                    </div>
+                      <div className={`relative flex h-full items-start ${widths.length === 1 ? 'justify-center' : ''}`} style={{ gap: TILE_GAP }}>
+                        {visibleCardIds.has('companion') && (
+                          <CompanionTile
+                            avatar={settings.avatar}
+                            photo={photo}
+                            tasks={tasks}
+                            reminders={reminders}
+                            timer={timer}
+                            screenMs={screenTime.ms}
+                            track={nowPlaying?.title ?? null}
+                            playing={isPlayingAudio}
+                            mode={companionMode}
+                            sleeps={settings.companionSleeps ?? 'time'}
+                            minutes={settings.focusMinutes ?? 25}
+                            onMinutes={(m) => setSettings((s) => ({ ...s, focusMinutes: m }))}
+                            open={hubOpen}
+                            onToggle={() => setHubOpen((o) => !o)}
+                          />
+                        )}
+                        {visibleCardIds.has('media') && media && <MediaTile media={media} tint={albumTint} />}
+                        {visibleCardIds.has('time') && <TimeTile />}
+                        {visibleCardIds.has('task') && <TaskTile tasks={tasks} accent={accent} timer={timer} onOpenDesk={() => setView('desk')} />}
+                        {visibleCardIds.has('focus') && (
+                          <FocusTile timer={timer} tasks={settings.showTasks ? tasks : undefined} minutes={settings.focusMinutes ?? 25} />
+                        )}
+                        {visibleCardIds.has('status') && showStatus && <StatusTile privacy={privacy} battery={battery} accent={accent} page={statusPage} onPage={setStatusPage} />}
+                        <AiOrbs providers={aiShown} tint={orbTint} />
+                      </div>
                     </AloneContext.Provider>
+                  ) : view === 'reminder' && ringing ? (
+                    <ReminderView
+                      reminder={ringing}
+                      avatar={settings.avatar}
+                      photo={photo}
+                      accent={accent}
+                      onSnooze={() => {
+                        reminders.snooze(ringing.id, 5)
+                        endRing()
+                      }}
+                      onDismiss={() => {
+                        reminders.remove(ringing.id)
+                        endRing()
+                      }}
+                    />
                   ) : view === 'tasks' ? (
                     <DeskView tasks={tasks} timer={timer} accent={accent} />
                   ) : view === 'volume' ? (
@@ -597,7 +625,7 @@ export default function HomePage() {
                   ) : view === 'files' ? (
                     <FileStrip accent={accent} dragging={dragging} onCount={setShelfCount} />
                   ) : view === 'settings' ? (
-                    <SettingsPanel settings={settings} onChange={setSettings} aiLimits={aiLimits} />
+                    <SettingsPanel settings={settings} onChange={setSettings} aiLimits={aiLimits} desktimeInstalled={screenTime.installed} />
                   ) : (
                     <DeskView tasks={tasks} timer={timer} accent={accent} />
                   )}
@@ -613,7 +641,8 @@ export default function HomePage() {
                   timer={timer}
                   avatar={showCompanion ? settings.avatar : null}
                   photo={photo}
-                  right={settings.collapsedRight ?? 'time'}
+                  right={collapsedRight}
+                  screenMs={screenTime.ms}
                   limits={companionLimits}
                   privacy={privacy}
                   battery={battery}

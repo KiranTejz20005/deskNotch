@@ -1,8 +1,5 @@
-import path from 'path'
 import { screen, BrowserWindow, Display } from 'electron'
-import { readStore, writeStore } from './store'
-
-const isProd = process.env.NODE_ENV === 'production'
+import { readStore } from './store'
 
 export interface DisplayInfo {
   id: string
@@ -19,8 +16,9 @@ export function getDisplaysInfo(): DisplayInfo[] {
 
   return all.map((d, index) => {
     const isPrimary = d.id === primary.id
+    const name = d.label ? d.label : `Display ${index + 1}`
     const res = `${d.bounds.width}×${d.bounds.height}`
-    const label = `Display ${index + 1} (${res})`
+    const label = isPrimary ? `${name} (Primary - ${res})` : `${name} (${res})`
     return {
       id: String(d.id),
       label,
@@ -32,173 +30,67 @@ export function getDisplaysInfo(): DisplayInfo[] {
   })
 }
 
-export function resolveTargetDisplay(selectedDisplayId?: string): Display {
-  const allDisplays = screen.getAllDisplays()
-  const primaryDisplay = screen.getPrimaryDisplay()
-
-  if (!selectedDisplayId || selectedDisplayId === 'primary') {
-    return primaryDisplay
-  }
-
-  const found = allDisplays.find(
-    (d, idx) => String(d.id) === selectedDisplayId || `display-${idx}` === selectedDisplayId
-  )
-  return found || primaryDisplay
+/** The displays that get a notch: every one for 'all', else the chosen one
+ *  (the primary when it is unset or unplugged). */
+export function resolveTargetDisplays(selectedDisplayId?: string): Display[] {
+  if (selectedDisplayId === 'all' || selectedDisplayId === 'both') return screen.getAllDisplays()
+  const found = screen.getAllDisplays().find((d) => String(d.id) === selectedDisplayId)
+  return [found ?? screen.getPrimaryDisplay()]
 }
 
-let mainWindowRef: BrowserWindow | null = null
-let extraWindows: BrowserWindow[] = []
+/** One notch window per display it sits on, keyed by display id. */
+const windows = new Map<string, BrowserWindow>()
+let createWindow: ((bounds: Electron.Rectangle) => BrowserWindow) | null = null
+let stripHeight = 500
 
-export function setMainWindowForDisplay(win: BrowserWindow) {
-  mainWindowRef = win
-}
+export const notchWindows = () => [...windows].filter(([, win]) => !win.isDestroyed())
 
-export function getAllActiveWindows(): BrowserWindow[] {
-  const list: BrowserWindow[] = []
-  if (mainWindowRef && !mainWindowRef.isDestroyed()) list.push(mainWindowRef)
-  for (const win of extraWindows) {
-    if (win && !win.isDestroyed()) list.push(win)
-  }
-  return list
-}
+/**
+ * Puts a notch on each target display. A window whose display is still a
+ * target stays put; one whose display is not is moved to a new target rather
+ * than rebuilt, so switching displays keeps the notch's state. Extras close
+ * only after the new ones exist, so the app never has zero windows and quits.
+ */
+export function syncNotchWindows() {
+  if (!createWindow) return
+  const selected = (readStore().settings?.selectedDisplayId as string) || 'primary'
+  const targets = resolveTargetDisplays(selected)
+  const targetIds = new Set(targets.map((d) => String(d.id)))
 
-function positionWindowOnDisplay(win: BrowserWindow, display: Display, STRIP_HEIGHT: number) {
-  const newBounds = {
-    x: Math.round(display.bounds.x),
-    y: Math.round(display.bounds.y),
-    width: Math.round(display.bounds.width),
-    height: STRIP_HEIGHT,
-  }
-
-  win.setMovable(true)
-  win.setResizable(true)
-  win.setBounds(newBounds)
-  win.setPosition(newBounds.x, newBounds.y)
-}
-
-function createExtraNotchWindow(display: Display, STRIP_HEIGHT: number): BrowserWindow {
-  const win = new BrowserWindow({
-    width: Math.round(display.bounds.width),
-    height: STRIP_HEIGHT,
-    x: Math.round(display.bounds.x),
-    y: Math.round(display.bounds.y),
-    title: 'deskNotch',
-    transparent: true,
-    hasShadow: false,
-    frame: false,
-    resizable: true,
-    movable: true,
-    fullscreenable: false,
-    skipTaskbar: true,
-    type: 'toolbar',
-    alwaysOnTop: true,
-    webPreferences: {
-      preload: path.join(import.meta.dirname, 'preload.js'),
-    },
-  })
-
-  win.setAlwaysOnTop(true, 'screen-saver')
-  win.setVisibleOnAllWorkspaces(true)
-  win.setIgnoreMouseEvents(true, { forward: true })
-
-  if (isProd) {
-    win.loadURL('app://./home').catch(() => {})
-  } else {
-    const port = process.argv[2] || '8888'
-    win.loadURL(`http://localhost:${port}/home`).catch(() => {
-      win.loadURL('app://./home').catch(() => {})
-    })
+  const spare: BrowserWindow[] = []
+  for (const [id, win] of windows) {
+    if (targetIds.has(id) && !win.isDestroyed()) continue
+    windows.delete(id)
+    if (!win.isDestroyed()) spare.push(win)
   }
 
-  return win
-}
-
-export function updateNotchWindowPosition(STRIP_HEIGHT: number = 500) {
-  if (!mainWindowRef || mainWindowRef.isDestroyed()) return
-
-  const store = readStore()
-  const settings = (store.settings ?? {}) as Record<string, unknown>
-  const primaryDisplay = screen.getPrimaryDisplay()
-  const rawDisplays = screen.getAllDisplays()
-  if (rawDisplays.length === 0) return
-
-  const sortedDisplays = [
-    primaryDisplay,
-    ...rawDisplays.filter((d) => d.id !== primaryDisplay.id).sort((a, b) => a.bounds.x - b.bounds.x),
-  ]
-
-  let selectedDisplayId = (settings.selectedDisplayId as string) || 'both'
-  if (selectedDisplayId === 'primary') {
-    selectedDisplayId = String(primaryDisplay.id)
-  }
-
-  if (selectedDisplayId === 'both') {
-    // 1. Main window on Primary Display
-    positionWindowOnDisplay(mainWindowRef, sortedDisplays[0], STRIP_HEIGHT)
-
-    // 2. Extra windows for Display 1..N
-    const targetExtraDisplays = sortedDisplays.slice(1)
-
-    // Clean up excess extra windows
-    while (extraWindows.length > targetExtraDisplays.length) {
-      const w = extraWindows.pop()
-      if (w && !w.isDestroyed()) w.destroy()
+  for (const display of targets) {
+    const id = String(display.id)
+    const bounds = { x: display.bounds.x, y: display.bounds.y, width: display.bounds.width, height: stripHeight }
+    const win = windows.get(id) ?? spare.pop() ?? createWindow(bounds)
+    windows.set(id, win)
+    const current = win.getBounds()
+    if (current.x !== bounds.x || current.y !== bounds.y || current.width !== bounds.width || current.height !== bounds.height) {
+      win.setBounds(bounds)
     }
-
-    targetExtraDisplays.forEach((disp, idx) => {
-      let win = extraWindows[idx]
-      if (!win || win.isDestroyed()) {
-        win = createExtraNotchWindow(disp, STRIP_HEIGHT)
-        extraWindows[idx] = win
-      } else {
-        positionWindowOnDisplay(win, disp, STRIP_HEIGHT)
-      }
-    })
-  } else {
-    // Single display selected -> Destroy all extra windows
-    while (extraWindows.length > 0) {
-      const w = extraWindows.pop()
-      if (w && !w.isDestroyed()) w.destroy()
-    }
-
-    const targetDisplay = resolveTargetDisplay(selectedDisplayId)
-    positionWindowOnDisplay(mainWindowRef, targetDisplay, STRIP_HEIGHT)
   }
+
+  for (const win of spare) win.destroy()
 
   notifyDisplaysChanged()
 }
 
 export function notifyDisplaysChanged() {
-  const windows = getAllActiveWindows()
-  const info = getDisplaysInfo()
-  for (const win of windows) {
-    if (!win.isDestroyed()) {
-      win.webContents.send('display:changed', info)
-    }
-  }
+  const list = getDisplaysInfo()
+  for (const [, win] of notchWindows()) win.webContents.send('display:changed', list)
 }
 
-export function setupDisplayListeners(STRIP_HEIGHT: number = 500) {
-  const handler = () => {
-    const store = readStore()
-    const settings = (store.settings ?? {}) as Record<string, unknown>
-    const selectedDisplayId = settings.selectedDisplayId as string
-    if (selectedDisplayId && selectedDisplayId !== 'both' && selectedDisplayId !== 'primary') {
-      const allDisplays = screen.getAllDisplays()
-      const exists = allDisplays.some(
-        (d, idx) => String(d.id) === selectedDisplayId || `display-${idx}` === selectedDisplayId
-      )
-      if (!exists) {
-        writeStore({
-          ...store,
-          settings: { ...settings, selectedDisplayId: 'both' },
-        })
-      }
-    }
-    updateNotchWindowPosition(STRIP_HEIGHT)
-  }
+export function setupNotchWindows(create: (bounds: Electron.Rectangle) => BrowserWindow, STRIP_HEIGHT: number = 500) {
+  createWindow = create
+  stripHeight = STRIP_HEIGHT
+  syncNotchWindows()
 
-  screen.on('display-added', handler)
-  screen.on('display-removed', handler)
-  screen.on('display-metrics-changed', handler)
+  screen.on('display-added', syncNotchWindows)
+  screen.on('display-removed', syncNotchWindows)
+  screen.on('display-metrics-changed', syncNotchWindows)
 }

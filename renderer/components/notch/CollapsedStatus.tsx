@@ -6,6 +6,7 @@ import {
   Bluetooth,
   Camera,
   Headphones,
+  Hourglass,
   Mic,
   Wifi,
   Sun,
@@ -30,6 +31,7 @@ import type { WeatherData } from '../../hooks/useWeather'
 import type { BluetoothDevice } from '../../hooks/useBluetoothBattery'
 import { useNow } from '../../hooks/useNow'
 import { WARNING } from '../widgets/AiOrbs'
+import { formatScreenTime } from '../../hooks/useScreenTime'
 
 const spring = { type: 'spring' as const, stiffness: 380, damping: 32 }
 
@@ -85,8 +87,10 @@ interface CollapsedStatusProps {
   /** The companion, for its colour (the focus ring); not drawn in the bar. */
   avatar?: Avatar | null
   photo?: string | null
-  /** The right side: the time, AI limits, weather, battery, or bluetooth. */
-  right: 'time' | 'ai' | 'weather' | 'battery' | 'bluetooth'
+  /** The right side: the time, AI limits, screen time, weather, battery, or bluetooth. */
+  right: 'time' | 'ai' | 'screen' | 'weather' | 'battery' | 'bluetooth'
+  /** Today's screen time from DeskTime, for right = 'screen'. */
+  screenMs?: number | null
   limits: ProviderLimits[]
   privacy: PrivacyState
   /** The laptop's charge. */
@@ -151,18 +155,19 @@ const Clock: React.FC = () => {
 }
 
 /**
- * The right of the bar: the chosen reading (time, AI, weather, battery, or bluetooth),
+ * The right of the bar: the chosen reading (time, AI, screen time, weather, battery, or bluetooth),
  * then any privacy dots at the very edge.
  */
 const Right: React.FC<{
-  right: 'time' | 'ai' | 'weather' | 'battery' | 'bluetooth'
+  right: 'time' | 'ai' | 'screen' | 'weather' | 'battery' | 'bluetooth'
+  screenMs?: number | null
   timeOnLeft: boolean
   limits: ProviderLimits[]
   privacy: PrivacyState
   weather?: WeatherData | null
-  battery?: BatteryState | null
+  battery?: BatteryState
   bluetooth?: BluetoothDevice | null
-}> = ({ right, timeOnLeft, limits, privacy, weather, battery, bluetooth }) => {
+}> = ({ right, screenMs, timeOnLeft, limits, privacy, weather, battery, bluetooth }) => {
   const ai = right === 'ai' ? windows(limits) : null
   const dots = [privacy.camera && CAMERA, privacy.mic && MIC].filter(Boolean) as string[]
   const low = Boolean(battery?.supported && !battery.charging && battery.level <= LOW_LEVEL)
@@ -196,6 +201,13 @@ const Right: React.FC<{
           )}
           <span className="text-[10.5px] font-semibold tabular-nums text-white/80">{bluetooth.batteryPercent}%</span>
         </span>
+      ) : right === 'screen' ? (
+        screenMs != null && (
+          <span aria-label="Screen time today" className="flex items-center gap-1 whitespace-nowrap text-[10.5px] font-semibold leading-none tabular-nums text-white/75">
+            <Hourglass size={10} strokeWidth={2.2} className="block shrink-0 text-white/45" />
+            <span className="block">{formatScreenTime(screenMs)}</span>
+          </span>
+        )
       ) : right === 'ai' && ai ? (
         <span className="flex items-center gap-1.5">
           <svg viewBox="0 0 16 16" className="h-[13px] w-[13px] -rotate-90">
@@ -257,14 +269,13 @@ const clock = (ms: number) => {
  * What the notch says when it is closed.
  *
  * One thing at a time, most urgent first: a focus session running, then
- * music (just the art and a pulse — the title was a status line nobody read),
- * then what is left to do.
+ * music (just the art and a pulse), then what is left to do.
  */
-const Status: React.FC<CollapsedStatusProps> = ({ nowPlaying, tasks, timer, avatar, right, limits, privacy, weather, battery, bluetooth }) => {
+const Status: React.FC<CollapsedStatusProps> = ({ nowPlaying, tasks, timer, avatar, right, screenMs, limits, privacy, weather, battery, bluetooth }) => {
   const focusing = timer.isRunning
   const isPlaying = !focusing && Boolean(nowPlaying?.isPlaying)
-  const open = focusing || isPlaying ? 0 : tasks.tasks.filter((task) => !task.done).length
   const idle = !focusing && !isPlaying
+  const open = tasks.tasks.filter((t) => !t.done).length
 
   return (
     <div className="flex min-w-0 flex-1 items-center gap-2.5">
@@ -327,8 +338,6 @@ const Status: React.FC<CollapsedStatusProps> = ({ nowPlaying, tasks, timer, avat
             transition={spring}
             className="flex items-center gap-2 min-w-0 overflow-hidden"
           >
-            {/* The art, then the title, then the pulse: what, which, and that it
-                is still going — the Island's own order. */}
             {nowPlaying?.thumbnailUrl && (
               <img
                 src={nowPlaying.thumbnailUrl}
@@ -359,7 +368,16 @@ const Status: React.FC<CollapsedStatusProps> = ({ nowPlaying, tasks, timer, avat
         )}
       </AnimatePresence>
 
-      <Right right={right} timeOnLeft={idle} limits={limits} privacy={privacy} weather={weather} battery={battery} bluetooth={bluetooth} />
+      <Right
+        right={right}
+        screenMs={screenMs}
+        timeOnLeft={idle}
+        limits={limits}
+        privacy={privacy}
+        weather={weather}
+        battery={battery}
+        bluetooth={bluetooth}
+      />
     </div>
   )
 }
@@ -372,38 +390,38 @@ const Status: React.FC<CollapsedStatusProps> = ({ nowPlaying, tasks, timer, avat
 const ConnectedMoment: React.FC<{ moment: Moment }> = ({ moment }) => {
   const Icon = MOMENT_ICON[moment.kind]
   return (
-  <motion.div
-    className="flex min-w-0 flex-1 items-center gap-2.5"
-    initial={{ opacity: 0 }}
-    animate={{ opacity: 1 }}
-    exit={{ opacity: 0, x: -8, transition: { duration: 0.18 } }}
-  >
-    <motion.span
-      className="grid shrink-0"
-      style={{ color: MOMENT_COLOR[moment.kind] ?? 'white' }}
-      initial={{ x: -18, rotate: -25, scale: 0.6 }}
-      animate={{ x: 0, rotate: 0, scale: 1 }}
-      transition={{ type: 'spring', stiffness: 520, damping: 18 }}
-    >
-      <Icon size={14} strokeWidth={2.2} />
-    </motion.span>
-    <motion.span
-      className="min-w-0 truncate text-[10.5px] font-semibold text-white/90"
-      initial={{ opacity: 0, x: -6 }}
-      animate={{ opacity: 1, x: 0 }}
-      transition={{ delay: 0.08, duration: 0.2 }}
-    >
-      {moment.name}
-    </motion.span>
-    <motion.span
-      className="ml-auto shrink-0 text-[10px] font-medium text-white/45"
+    <motion.div
+      className="flex min-w-0 flex-1 items-center gap-2.5"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
-      transition={{ delay: 0.14, duration: 0.2 }}
+      exit={{ opacity: 0, x: -8, transition: { duration: 0.18 } }}
     >
-      {moment.detail ?? 'Connected'}
-    </motion.span>
-  </motion.div>
+      <motion.span
+        className="grid shrink-0"
+        style={{ color: MOMENT_COLOR[moment.kind] ?? 'white' }}
+        initial={{ x: -18, rotate: -25, scale: 0.6 }}
+        animate={{ x: 0, rotate: 0, scale: 1 }}
+        transition={{ type: 'spring', stiffness: 520, damping: 18 }}
+      >
+        <Icon size={14} strokeWidth={2.2} />
+      </motion.span>
+      <motion.span
+        className="min-w-0 truncate text-[10.5px] font-semibold text-white/90"
+        initial={{ opacity: 0, x: -6 }}
+        animate={{ opacity: 1, x: 0 }}
+        transition={{ delay: 0.08, duration: 0.2 }}
+      >
+        {moment.name}
+      </motion.span>
+      <motion.span
+        className="ml-auto shrink-0 text-[10px] font-medium text-white/45"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ delay: 0.14, duration: 0.2 }}
+      >
+        {moment.detail ?? 'Connected'}
+      </motion.span>
+    </motion.div>
   )
 }
 

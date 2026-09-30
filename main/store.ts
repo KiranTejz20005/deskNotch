@@ -21,9 +21,11 @@ export interface StoreShape {
   pins: string[]
   /** Completed focus-timer sessions, kept for up to 90 days. */
   focusLog: unknown[]
+  /** Reminders set from the companion: { id, at, message }. */
+  reminders: unknown[]
 }
 
-const defaults: StoreShape = { todos: [], settings: {}, photo: null, shelf: [], pins: [], focusLog: [] }
+const defaults: StoreShape = { todos: [], settings: {}, photo: null, shelf: [], pins: [], focusLog: [], reminders: [] }
 
 let cache: StoreShape | null = null
 

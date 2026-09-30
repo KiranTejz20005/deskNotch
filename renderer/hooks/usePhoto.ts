@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { onStoreChange } from '../lib/store'
 
 /**
  * The user's own photo, as a data URL, and a way to pick a new one. Stored as
@@ -13,6 +14,8 @@ export function usePhoto() {
       .then((stored) => setPhoto(stored ?? null))
       .catch(() => setPhoto(null))
   }, [])
+
+  useEffect(() => onStoreChange<string | null>('photo', setPhoto), [])
 
   const pick = async () => {
     const picked = await window.bridge?.invoke<string | null>('photo:pick')
