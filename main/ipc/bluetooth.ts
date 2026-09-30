@@ -1,6 +1,6 @@
 import { ipcMain } from 'electron'
 import { exec } from 'child_process'
-import { getAllActiveWindows } from '../display'
+import { notchWindows } from '../display'
 
 export interface BluetoothDevice {
   id: string
@@ -110,7 +110,7 @@ export function fetchBluetoothBattery(): Promise<BluetoothDevice | null> {
 }
 
 function notifyBluetoothChange(device: BluetoothDevice | null) {
-  for (const win of getAllActiveWindows()) {
+  for (const [, win] of notchWindows()) {
     if (win && !win.isDestroyed()) {
       win.webContents.send('bluetooth:battery-update', device)
     }
