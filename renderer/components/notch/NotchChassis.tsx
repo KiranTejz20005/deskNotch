@@ -19,6 +19,9 @@ export const CHROME_Y = BAR_OPEN + PAD_TOP + PAD
 
 /** How far past its edge the pointer may drift before the notch lets go. */
 const LEAVE_MARGIN = 48
+/** Past the margin but not moving (a quick flick away, then stillness): how
+ *  long before the notch lets go anyway. */
+const AWAY_STILL_MS = 700
 
 /** The notch's spring: snappy, barely overshoots. */
 const spring = { type: 'spring' as const, stiffness: 400, damping: 30 }
@@ -172,17 +175,6 @@ export const NotchChassis: React.FC<NotchChassisProps> = ({
 
   const setHover = (over: boolean) => setIsHovered(over)
 
-  // Leaving is judged by intent, not by the edge. The notch changes size under
-  // a still pointer (switch to the smaller Shelf and the edge jumps away), so
-  // crossing the edge only starts watching: the notch closes once the pointer
-  // is clearly away (past LEAVE_MARGIN) and still heading away, or leaves the
-  // window. Heading back toward it keeps it open.
-  const leaving = useRef<(() => void) | null>(null)
-  const stopLeaving = () => {
-    leaving.current?.()
-    leaving.current = null
-  }
-  useEffect(() => stopLeaving, [])
   /** Everything that belongs to the notch: itself, the dock, the apps tray, and
    *  any popover marked `data-notch-part` (the favourites picker). */
   const parts = () =>
@@ -208,31 +200,48 @@ export const NotchChassis: React.FC<NotchChassisProps> = ({
   // come back to open it again, so it does not spring straight back open.
   useEffect(() => {
     if (!closeKey) return
-    stopLeaving()
     setHover(false)
   }, [closeKey])
 
-  const onEnter = () => {
-    stopLeaving()
-    setHover(true)
-  }
-  const onLeave = () => {
-    stopLeaving()
-    let last = Infinity
-    // The real cursor, from the main process, and only when the hand moves:
-    // past the edge the window lets the mouse through, so DOM events stop (or
-    // claim the pointer left), and while the notch resizes the browser sends
-    // moves for a pointer that never moved.
+  // Leaving is judged from the real pointer, not from the DOM's mouseleave.
+  // The window turns click-through the moment the pointer is off the notch,
+  // and a quick exit could beat the mouseleave: it never came, and the notch
+  // stayed open. So while hovered, the pointer's position from the main
+  // process (sent whenever it moves) decides, by intent rather than the edge:
+  // - within LEAVE_MARGIN of the notch, the dock or the tray: stay;
+  // - past it and still heading away: close;
+  // - past it and then still (a flick away): close after AWAY_STILL_MS;
+  // - heading back: stay. The notch also changes size under a still pointer
+  //   (a smaller view), which is why the edge alone never closes it.
+  useEffect(() => {
+    if (!isHovered) return
+    let last = 0
+    let away: ReturnType<typeof setTimeout> | undefined
+    const close = () => setHover(false)
     const unsubscribe = window.bridge?.on<{ x: number; y: number }>('notch:cursor', ({ x, y }) => {
       const d = distance(x, y)
-      if (d > LEAVE_MARGIN && d > last) {
-        stopLeaving()
-        setHover(false)
+      if (d <= LEAVE_MARGIN) {
+        clearTimeout(away)
+        away = undefined
+      } else if (away && d > last) {
+        // Out past the margin before, and further now: going.
+        close()
+      } else if (!away) {
+        away = setTimeout(close, AWAY_STILL_MS)
+      } else if (d < last) {
+        // Coming back: give it a fresh beat.
+        clearTimeout(away)
+        away = setTimeout(close, AWAY_STILL_MS)
       }
       last = d
     })
-    leaving.current = () => unsubscribe?.()
-  }
+    return () => {
+      unsubscribe?.()
+      clearTimeout(away)
+    }
+  }, [isHovered])
+
+  const onEnter = () => setHover(true)
 
   // The window is a full-width strip, so the main process cannot simply stop
   // ignoring mouse events — that would hand the whole strip clicks meant for
@@ -309,7 +318,6 @@ export const NotchChassis: React.FC<NotchChassisProps> = ({
     <motion.div
       ref={shellRef}
       onMouseEnter={onEnter}
-      onMouseLeave={onLeave}
       onDragEnter={(event) => {
         setHover(true)
         // A file on its way in: stay open to take it, and after, until unlocked.
