@@ -1,5 +1,5 @@
 /**
- * Screen time from ScreenWise (bruhlabs.top), a separate app.
+ * Screen time from ScreenWise (bruhlabs.top/download), a separate app.
  *
  * ScreenWise has no API or pub/sub: it keeps everything in a local SQLite file.
  * So it is read directly, read-only, with the same sum ScreenWise's own
@@ -39,7 +39,7 @@ const isInstalled = async () => {
 }
 
 /** ScreenWise's download page. */
-export const DESKTIME_URL = 'http://bruhlabs.top/'
+export const DESKTIME_URL = 'https://www.bruhlabs.top/download'
 
 /** ScreenWise's database, in its data folder (named after the app). Its file
  *  may still carry the app's earlier name, so both are looked for. */

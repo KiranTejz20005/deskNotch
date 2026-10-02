@@ -36,7 +36,7 @@ A walkthrough of everything added, fixed and removed in this round of work, so y
 
 ## 1. Screen time from ScreenWise
 
-**What.** The notch can show today's screen time, taken from your friend's app [ScreenWise](http://bruhlabs.top/). It appears in two places:
+**What.** The notch can show today's screen time, taken from your friend's app [ScreenWise](https://www.bruhlabs.top/download). It appears in two places:
 
 - **Closed notch, right side**: Settings → Notch → Closed notch → Right side → **Screen time**. Shows an hourglass and "3h 44m".
 - **Companion**: mode **Screen time** shows the figure large, with "Today, from ScreenWise".
@@ -49,11 +49,11 @@ If ScreenWise is **not installed**, both options are greyed out and a **Get Scre
 - `main/ipc/desktime.ts`: opens the database with Node's built-in `node:sqlite` (no new package), IPC `desktime:screen-time` and `desktime:download`.
 - `renderer/hooks/useScreenTime.ts`: asks once on start (to know if ScreenWise is installed) and every 60 s while a screen-time view is picked.
 
-**ScreenWise.** Your friend's app (formerly DeskTime) is now ScreenWise, downloaded from [bruhlabs.top](http://bruhlabs.top/). DeskNotch only recognises ScreenWise:
+**ScreenWise.** Your friend's app (formerly DeskTime) is now ScreenWise, downloaded from [bruhlabs.top/download](https://www.bruhlabs.top/download). DeskNotch only recognises ScreenWise:
 
 - **Installed?** Windows' list of installed programs must contain **ScreenWise**.
 - **Data file**: `%APPDATA%\ScreenWise\screenwise.db`, or `%APPDATA%\ScreenWise\desktime.db` if the file kept the old name. If ScreenWise saves somewhere else, add that path to `DB_FILES` in `main/ipc/desktime.ts`.
-- **Get ScreenWise** opens `http://bruhlabs.top/`.
+- **Get ScreenWise** opens `https://www.bruhlabs.top/download`.
 
 **Installed means installed.** DeskNotch checks Windows' list of installed programs, not just the database: uninstalling ScreenWise leaves its database behind in AppData, and reading that used to show old screen time for an app that was gone. The check runs at most once a minute, so installing ScreenWise unlocks the option within a minute.
 
@@ -215,7 +215,7 @@ The companion's **AI** mode was replaced by **Screen time** (see section 1). AI 
 - **Renamed**: Next task → Tasks, Right now → Status, Sleeps → Sleep, Catch screenshots → Open on screenshot, Ambient glow → Music glow, Album tint → Album colours, Tuck behind browsers → Shrink over browsers, Hide on Fullscreen → Hide in fullscreen.
 - **A thin scrollbar** now shows when a section is longer than the panel.
 - **New-install defaults**: the Home cards are only **Companion** (in Clock mode), **Now playing** and **AI usage**. Tasks and Status start off. Existing users keep their own choices.
-- **Updates row**: General → System shows the version and **Check for updates** / **Restart to update** (section 17).
+- **Updates row**: General → System shows the version, download progress and **Check for updates**; a downloaded update installs by itself (section 17).
 
 **Where.** `renderer/components/widgets/SettingsPanel.tsx`.
 
@@ -272,7 +272,7 @@ Measured on the installed app: about **510 MB** in total, of which Task Manager'
 
 - It checks a minute after starting, then every 6 hours.
 - A newer version downloads in the background.
-- It installs when the app quits, or straight away with **Restart to update** in Settings → General → System.
+- It installs **by itself** once the PC has been left alone for a minute (no mouse or keyboard), or when the app quits, whichever comes first. The app starts again on its own. There is no button to press.
 - In `npm run dev` it never checks; the row says "Updates run in the installed app".
 
 **How it works.** When you publish a build, electron-builder uploads the installer **and a small file, `latest.yml`**, which holds the version number. The installed app reads `latest.yml` from the latest release; if the version is higher than its own, it downloads the installer and runs it silently.

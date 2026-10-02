@@ -287,26 +287,24 @@ const UpdateRow: React.FC = () => {
     none: 'Up to date',
     error: "Couldn't check for updates",
     downloading: `Downloading ${update.next ?? ''} · ${update.percent ?? 0}%`,
-    ready: `Version ${update.next} is ready`,
+    // It installs itself once the PC is left alone for a minute; nothing to press.
+    ready: `Version ${update.next} installs when you step away`,
   }[update.status]
-  const ready = update.status === 'ready'
   const busy = update.status === 'checking' || update.status === 'downloading' || update.status === 'dev'
   return (
     <Row title={`Version ${update.version}`} detail={detail}>
-      {update.status !== 'store' && (
-      <button
-        type="button"
-        disabled={busy}
-        onClick={(event) => {
-          halt(event)
-          void window.bridge?.invoke(ready ? 'update:install' : 'update:check')
-        }}
-        className={`h-[24px] shrink-0 rounded-full px-3 text-[11px] font-medium transition-colors disabled:opacity-35 ${
-          ready ? 'bg-white text-black' : 'bg-white/[0.08] text-white/75 hover:bg-white/[0.14] hover:text-white'
-        }`}
-      >
-        {ready ? 'Restart to update' : 'Check for updates'}
-      </button>
+      {update.status !== 'store' && update.status !== 'ready' && (
+        <button
+          type="button"
+          disabled={busy}
+          onClick={(event) => {
+            halt(event)
+            void window.bridge?.invoke('update:check')
+          }}
+          className="h-[24px] shrink-0 rounded-full bg-white/[0.08] px-3 text-[11px] font-medium text-white/75 transition-colors hover:bg-white/[0.14] hover:text-white disabled:opacity-35"
+        >
+          Check for updates
+        </button>
       )}
     </Row>
   )
