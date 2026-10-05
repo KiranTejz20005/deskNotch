@@ -31,7 +31,7 @@ import { useDominantColor } from '../hooks/useDominantColor'
 import { useWallpaperColor } from '../hooks/useWallpaperColor'
 import { useTimer } from '../hooks/useTimer'
 import { useTasks } from '../hooks/useTasks'
-import { useAiLimits } from '../hooks/useAiLimits'
+import { refreshAiLimits, useAiLimits } from '../hooks/useAiLimits'
 import { usePrivacy } from '../hooks/usePrivacy'
 import { useHeadphones } from '../hooks/useHeadphones'
 import { useBattery } from '../hooks/useBattery'
@@ -270,6 +270,10 @@ export default function HomePage() {
   const nothingChosen = !settings.showAvatar && !settings.showMusic && !settings.showTasks && !settings.showFocus
   const collapsedWantsAi = settings.collapsedRight === 'ai'
   const aiLimits = useAiLimits(settings.showAiUsage || nothingChosen || view === 'settings' || collapsedWantsAi)
+  // Switching AI usage back on after declining is what asks again (ipc/limits.ts).
+  useEffect(() => {
+    if (settings.showAiUsage || collapsedWantsAi) void refreshAiLimits()
+  }, [settings.showAiUsage, collapsedWantsAi])
 
   useEffect(() => {
     window.bridge
