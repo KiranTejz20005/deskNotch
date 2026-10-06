@@ -87,9 +87,9 @@ interface CollapsedStatusProps {
   /** The companion, for its colour (the focus ring); not drawn in the bar. */
   avatar?: Avatar | null
   photo?: string | null
-  /** The right side: the time, AI limits, screen time, weather, battery, or bluetooth. */
+  /** The right side: the time, AI limits, screen time (DeskTime/ScreenWise), weather, battery, or bluetooth. */
   right: 'time' | 'ai' | 'screen' | 'weather' | 'battery' | 'bluetooth'
-  /** Today's screen time from DeskTime, for right = 'screen'. */
+  /** Today's screen time from DeskTime / ScreenWise, for right = 'screen'. */
   screenMs?: number | null
   limits: ProviderLimits[]
   privacy: PrivacyState

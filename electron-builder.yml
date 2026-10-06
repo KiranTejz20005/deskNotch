@@ -1,6 +1,6 @@
-appId: com.yashsrivasta7a.desknotch
+appId: com.devezio.desknotch
 productName: DeskNotch
-copyright: Copyright © 2026 yashsrivasta7a.in
+copyright: Copyright © 2026 Devezio.tech
 directories:
   output: dist
   buildResources: resources
@@ -28,6 +28,8 @@ win:
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
+  # Shown before installing; the user must accept it to continue.
+  license: resources/license.txt
 # The Store package. Identity values from Partner Center →
 # your app → Product management → Product identity, copied exactly.
 # Tile images are in resources/appx (made by scripts/make-icon.cjs).

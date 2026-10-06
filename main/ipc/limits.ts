@@ -6,10 +6,12 @@
  * ponytail: no token refresh here — refreshing rotates the token the tool itself
  * relies on. The tool refreshes it next time it runs; the file is re-read each poll.
  */
-import { app, ipcMain } from 'electron'
+import { app, dialog, ipcMain } from 'electron'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
+import { readStore, writeStore } from '../store'
+import { announceStore } from './store'
 
 export interface Limit {
   label: string
@@ -143,8 +145,50 @@ const codex = (force?: boolean) =>
         })),
   ), force)
 
+/** Asks once before any login is read. Every notch shares the one question. */
+let asking: Promise<boolean> | null = null
+const askConsent = async () => {
+  const { response } = await dialog.showMessageBox({
+    type: 'question',
+    title: 'DeskNotch',
+    message: 'Show your Claude Code and Codex usage limits?',
+    detail:
+      'To show your plan limits, DeskNotch reads the sign-in that Claude Code and Codex already keep on this PC, ' +
+      'and sends it only to Anthropic or OpenAI to fetch your usage. It is never stored elsewhere or sent anywhere else. ' +
+      'Your use of those services stays under their own terms.\n\n' +
+      'You can change this later by switching AI usage on or off in Settings.',
+    buttons: ['Allow', 'Not now'],
+    defaultId: 0,
+    cancelId: 1,
+    noLink: true,
+  })
+  const allowed = response === 0
+  const store = readStore()
+  const settings = { ...store.settings }
+  if (!allowed) {
+    // Declined: the AI readings go away, so switching them back on is how to be asked again.
+    settings.showAiUsage = false
+    if (settings.collapsedRight === 'ai') settings.collapsedRight = 'time'
+  }
+  writeStore({ ...store, aiConsent: allowed, settings })
+  if (!allowed) announceStore('settings', settings)
+  return allowed
+}
+
+/** Whether the logins may be read now, asking first when the user wants AI usage
+ *  but has not said yes: on first use, or after switching it back on. */
+const consented = async () => {
+  const { aiConsent, settings } = readStore()
+  if (aiConsent === true) return true
+  const wantsAi = aiConsent === null || settings.showAiUsage === true || settings.collapsedRight === 'ai'
+  if (!wantsAi) return false
+  asking ??= askConsent().finally(() => (asking = null))
+  return asking
+}
+
 export function registerLimitsIpc() {
-  ipcMain.handle('ai:limits', async (_event, force?: unknown) =>
-    (await Promise.all([claude(force === true), codex(force === true)])).filter(Boolean) as ProviderLimits[],
-  )
+  ipcMain.handle('ai:limits', async (_event, force?: unknown) => {
+    if (!(await consented())) return []
+    return (await Promise.all([claude(force === true), codex(force === true)])).filter(Boolean) as ProviderLimits[]
+  })
 }

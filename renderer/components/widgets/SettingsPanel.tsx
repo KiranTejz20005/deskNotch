@@ -45,7 +45,7 @@ export interface Settings {
   dockSide: DockSide
   /** Views taken off the dock ('glance', 'desk', 'files'); Settings and the lock always stay. */
   hiddenViews: string[]
-  /** What the closed notch shows on its right; 'screen' needs DeskTime installed. */
+  /** What the closed notch shows on its right; 'screen' needs ScreenWise / DeskTime installed. */
   collapsedRight: 'time' | 'ai' | 'screen' | 'weather' | 'battery' | 'bluetooth'
   /** Open the notch on each new screenshot. */
   catchScreenshots: boolean
@@ -421,7 +421,7 @@ interface SettingsPanelProps {
   onChange: (next: Settings) => void
   /** The AI limits found, to offer them one by one. */
   aiLimits: ProviderLimits[] | null
-  /** DeskTime is installed, so the screen-time reading can be picked. */
+  /** ScreenWise is installed, so the screen-time reading can be picked. */
   desktimeInstalled: boolean
 }
 
@@ -449,25 +449,23 @@ const UpdateRow: React.FC = () => {
     none: 'Up to date',
     error: "Couldn't check for updates",
     downloading: `Downloading ${update.next ?? ''} · ${update.percent ?? 0}%`,
-    ready: `Version ${update.next} is ready`,
+    // It installs itself once the PC is left alone for a minute; nothing to press.
+    ready: `Version ${update.next} installs when you step away`,
   }[update.status]
-  const ready = update.status === 'ready'
   const busy = update.status === 'checking' || update.status === 'downloading' || update.status === 'dev'
   return (
     <Row title={`Version ${update.version}`} detail={detail}>
-      {update.status !== 'store' && (
+      {update.status !== 'store' && update.status !== 'ready' && (
         <button
           type="button"
           disabled={busy}
           onClick={(event) => {
             halt(event)
-            void window.bridge?.invoke(ready ? 'update:install' : 'update:check')
+            void window.bridge?.invoke('update:check')
           }}
-          className={`h-[24px] shrink-0 rounded-full px-3 text-[11px] font-medium transition-colors disabled:opacity-35 ${
-            ready ? 'bg-white text-black' : 'bg-white/[0.08] text-white/75 hover:bg-white/[0.14] hover:text-white'
-          }`}
+          className="h-[24px] shrink-0 rounded-full bg-white/[0.08] px-3 text-[11px] font-medium text-white/75 transition-colors hover:bg-white/[0.14] hover:text-white disabled:opacity-35"
         >
-          {ready ? 'Restart to update' : 'Check for updates'}
+          Check for updates
         </button>
       )}
     </Row>
@@ -640,7 +638,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onChange
               value={settings.companionMode === 'screen' && !desktimeInstalled ? 'focus' : settings.companionMode}
               onChange={(v) => set('companionMode', v)}
               disabled={desktimeInstalled ? [] : ['screen']}
-              disabledTitle="Needs DeskTime installed"
+              disabledTitle="Needs ScreenWise installed"
             />
           </Row>
           <Row title="Sleep">
@@ -663,14 +661,15 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onChange
                 { id: 'battery', label: 'Battery' },
                 { id: 'bluetooth', label: 'Bluetooth' },
               ] as const}
+              // Picked earlier, then ScreenWise was uninstalled: the clock stands in.
               value={settings.collapsedRight === 'screen' && !desktimeInstalled ? 'time' : (settings.collapsedRight ?? 'time')}
               onChange={(v) => set('collapsedRight', v)}
               disabled={desktimeInstalled ? [] : ['screen']}
-              disabledTitle="Needs DeskTime installed"
+              disabledTitle="Needs ScreenWise installed"
             />
           </Row>
           {!desktimeInstalled && (
-            <Row title="Screen time" detail="Requires DeskTime">
+            <Row title="Screen time" detail="Requires ScreenWise">
               <button
                 type="button"
                 onClick={(event) => {
@@ -679,7 +678,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onChange
                 }}
                 className="h-[22px] shrink-0 rounded-full bg-white px-2.5 text-[10.5px] font-medium text-black"
               >
-                Get DeskTime
+                Get ScreenWise
               </button>
             </Row>
           )}
