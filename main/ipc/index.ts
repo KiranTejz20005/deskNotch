@@ -8,6 +8,7 @@ import { registerMediaIpc } from './media'
 import { registerFilesIpc } from './files'
 import { registerPrivacyIpc } from './privacy'
 import { registerAppsIpc } from './apps'
+import { registerUsageIpc } from './usage'
 import { registerDisplayIpc } from './display'
 import { registerBluetoothIpc } from './bluetooth'
 import { registerBatteryIpc } from './battery'
@@ -17,6 +18,7 @@ import { setupDndIpc } from './dnd'
 import { setupNotificationsIpc } from './notifications'
 import { setupThermalsIpc } from './thermals'
 import { registerShortcutIpc } from './shortcut'
+import { registerDesktimeIpc } from './desktime'
 
 export function registerIpc() {
   registerStoreIpc()
@@ -28,6 +30,7 @@ export function registerIpc() {
   registerFilesIpc()
   registerPrivacyIpc()
   registerAppsIpc()
+  registerUsageIpc()
   registerDisplayIpc()
   registerBluetoothIpc()
   registerBatteryIpc()
@@ -37,4 +40,5 @@ export function registerIpc() {
   setupNotificationsIpc()
   setupThermalsIpc()
   registerShortcutIpc()
+  registerDesktimeIpc()
 }

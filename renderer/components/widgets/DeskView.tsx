@@ -20,6 +20,14 @@ interface DeskViewProps {
   tasks: TaskStore
   timer: Timer
   accent: string
+  avatar?: any
+  photo?: string | null
+  minutes?: number
+  onMinutes?: (m: number) => void
+  log?: any
+  track?: string | null
+  playing?: boolean
+  sleeps?: any
 }
 
 /**
@@ -36,4 +44,3 @@ export const DeskView: React.FC<DeskViewProps> = ({ tasks, timer, accent }) => {
     </motion.div>
   )
 }
-

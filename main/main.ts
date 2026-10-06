@@ -5,10 +5,13 @@ import { startSmtc, stopSmtc } from './smtc'
 import { registerIpc } from './ipc'
 import { stopMediaIpc } from './ipc/media'
 import { stopPrivacyIpc } from './ipc/privacy'
+import { stopUsageIpc } from './ipc/usage'
 import { startScreenshotWatch, stopScreenshotWatch } from './ipc/screenshots'
 import { readStore } from './store'
-import { getAllActiveWindows, resolveTargetDisplay, setMainWindowForDisplay, setupDisplayListeners, updateNotchWindowPosition } from './display'
-import { startFullscreenWatch, stopFullscreenWatch } from './fullscreen'
+import { setupNotchWindows } from './display'
+import { applyContentProtection } from './ipc/system'
+import { startUpdater } from './updater'
+import { checkAndApplyFullscreenState, isTucked, stopFullscreenWatch } from './fullscreen'
 import { createTray, destroyTray, showDeskNotch } from './tray'
 import { registerGlobalShortcut, unregisterAllShortcuts, DEFAULT_SHORTCUT } from './ipc/shortcut'
 
@@ -29,21 +32,17 @@ if (isProd) {
   serve({ directory: 'app' })
 }
 
-app.whenReady().then(async () => {
-  if (process.platform === 'win32') {
-    app.setAppUserModelId('com.devezio.desknotch')
-  }
+// The notch, and the rail beside it while open: every rectangle that takes
+// clicks, per window (keyed by webContents id), as its renderer reports them.
+type Rect = { x: number; y: number; width: number; height: number }
+const notchBounds = new Map<number, Rect[]>()
 
-  const initialSettings = (readStore().settings ?? {}) as Record<string, unknown>
-  const targetDisplay = resolveTargetDisplay(initialSettings.selectedDisplayId as string)
-  const { width: screenWidth, x: screenX, y: screenY } = targetDisplay.bounds
-
-  const mainWindow = new BrowserWindow({
-    width: screenWidth,
-    height: STRIP_HEIGHT,
-    x: screenX,
-    y: screenY,
-    title: 'deskNotch',
+/** One notch strip across the top of a display. */
+const createNotchWindow = (bounds: Rect) => {
+  const window = new BrowserWindow({
+    ...bounds,
+    // The fullscreen watcher (fullscreen.ts) knows its own window by this title.
+    title: 'DeskNotch',
     transparent: true,
     hasShadow: false,
     frame: false,
@@ -60,90 +59,106 @@ app.whenReady().then(async () => {
     },
   })
 
-  mainWindow.setAlwaysOnTop(true, 'screen-saver')
-  mainWindow.setVisibleOnAllWorkspaces(true)
-  mainWindow.setIgnoreMouseEvents(true, { forward: true })
+  window.setAlwaysOnTop(true, 'screen-saver')
+  window.setVisibleOnAllWorkspaces(true)
 
-  type Rect = { x: number; y: number; width: number; height: number }
-  const windowBoundsMap = new Map<number, Rect[]>()
-  const windowInteractiveMap = new Map<number, boolean>()
-  const windowCursorMap = new Map<number, string>()
+  window.setIgnoreMouseEvents(true, { forward: true })
+  // A notch made later (a display plugged in) honours Hide in screenshots too.
+  applyContentProtection()
+
+  // The strip spans the whole screen width, so it must never take clicks for
+  // anything but the notch itself. The renderer reports the notch's bounds and
+  // the cursor is polled against them: setIgnoreMouseEvents(false) would hand
+  // the entire strip clicks, swallowing anything the user aimed at underneath.
+  const contentsId = window.webContents.id
+  let interactive = false
+  let lastCursor = ''
 
   const applyCursorHitTest = () => {
+    if (window.isDestroyed() || !window.isVisible()) return
+
     const { x, y } = screen.getCursorScreenPoint()
-    const activeWins = getAllActiveWindows()
+    const windowBounds = window.getBounds()
 
-    for (const win of activeWins) {
-      if (win.isDestroyed() || !win.isVisible()) continue
+    const inside = (notchBounds.get(contentsId) ?? []).some(
+      (r) =>
+        x >= windowBounds.x + r.x &&
+        x <= windowBounds.x + r.x + r.width &&
+        y >= windowBounds.y + r.y &&
+        y <= windowBounds.y + r.y + r.height,
+    )
 
-      const windowBounds = win.getBounds()
-      const notchBounds = windowBoundsMap.get(win.id) || []
-
-      const inside = notchBounds.some(
-        (r) =>
-          x >= windowBounds.x + r.x &&
-          x <= windowBounds.x + r.x + r.width &&
-          y >= windowBounds.y + r.y &&
-          y <= windowBounds.y + r.y + r.height,
-      )
-
-      const at = `${x - windowBounds.x},${y - windowBounds.y}`
-      if (at !== windowCursorMap.get(win.id)) {
-        windowCursorMap.set(win.id, at)
-        win.webContents.send('notch:cursor', { x: x - windowBounds.x, y: y - windowBounds.y })
-      }
-
-      const interactive = windowInteractiveMap.get(win.id) ?? false
-      if (inside !== interactive) {
-        windowInteractiveMap.set(win.id, inside)
-        win.setIgnoreMouseEvents(!inside, { forward: true })
-      }
+    // Where the pointer is, relative to the strip, whenever it moves: the
+    // notch decides whether a pointer that left it has really gone. DOM events
+    // cannot tell it, since the window stops taking the mouse past the edge.
+    const at = `${x - windowBounds.x},${y - windowBounds.y}`
+    if (at !== lastCursor) {
+      lastCursor = at
+      window.webContents.send('notch:cursor', { x: x - windowBounds.x, y: y - windowBounds.y })
     }
+
+    if (inside === interactive) return
+    interactive = inside
+    window.setIgnoreMouseEvents(!inside, { forward: true })
   }
 
-  setInterval(applyCursorHitTest, 60)
-
-  ipcMain.on('notch:bounds', (event, bounds: Rect[] | Rect) => {
-    const win = BrowserWindow.fromWebContents(event.sender)
-    if (win) {
-      windowBoundsMap.set(win.id, Array.isArray(bounds) ? bounds : [bounds])
-    }
-  })
-
-  ipcMain.on('notch:pinned', (event, isPinned: boolean) => {
-    const win = BrowserWindow.fromWebContents(event.sender)
-    if (win && !win.isDestroyed()) {
-      if (isPinned) win.focus()
-      else win.blur()
-      win.setSkipTaskbar(true)
-    }
-  })
-
-  ipcMain.on('notch:playback_session', (_event, session: any) => {
-    mainWindow.webContents.send('notch:playback_session', session)
+  // 60ms is under the threshold where a click feels like it missed, and cheap
+  // enough to leave running.
+  const hitTestTimer = setInterval(applyCursorHitTest, 60)
+  window.on('closed', () => {
+    clearInterval(hitTestTimer)
+    notchBounds.delete(contentsId)
   })
 
   if (isProd) {
-    await mainWindow.loadURL('app://./home').catch((err) => console.error('Failed to load prod URL:', err))
+    void window.loadURL('app://./home')
   } else {
     const port = process.argv[2] || '8888'
-    try {
-      await mainWindow.loadURL(`http://localhost:${port}/home`)
-    } catch (err) {
-      console.error('Dev server load failed, falling back to app://:', err)
-      await mainWindow.loadURL('app://./home').catch(() => {})
-    }
+    void window.loadURL(`http://localhost:${port}/home`)
   }
 
-  registerIpc()
-  setMainWindowForDisplay(mainWindow)
-  updateNotchWindowPosition(STRIP_HEIGHT)
-  setupDisplayListeners(STRIP_HEIGHT)
-  startSmtc(mainWindow)
-  startScreenshotWatch()
-  startFullscreenWatch(mainWindow)
-  createTray(mainWindow)
+  createTray(window)
+  return window
+}
 
+app.whenReady().then(() => {
+  if (process.platform === 'win32') {
+    app.setAppUserModelId('com.devezio.desknotch')
+  }
+
+  ipcMain.on('notch:bounds', (event, bounds: Rect[] | Rect) => {
+    notchBounds.set(event.sender.id, Array.isArray(bounds) ? bounds : [bounds])
+  })
+
+  // Only take keyboard focus when the notch is pinned open, so merely hovering
+  // it does not steal focus from whatever the user was typing in.
+  ipcMain.on('notch:pinned', (event, isPinned: boolean) => {
+    const window = BrowserWindow.fromWebContents(event.sender)
+    if (!window || window.isDestroyed()) return
+    if (isPinned) window.focus()
+    else window.blur()
+    // Focus can put a window back on the taskbar; keep it off.
+    window.setSkipTaskbar(true)
+  })
+
+  // A notch that just loaded asks whether it starts tucked behind a browser.
+  ipcMain.handle('notch:tucked', (event) => isTucked(BrowserWindow.fromWebContents(event.sender)?.id ?? -1))
+
+  ipcMain.on('notch:playback_session', (_event, session: any) => {
+    for (const window of BrowserWindow.getAllWindows()) window.webContents.send('notch:playback_session', session)
+  })
+
+  // Handlers first, so a window created later (another display, or 'All')
+  // finds them ready.
+  registerIpc()
+  startUpdater()
+  startSmtc()
+  startScreenshotWatch()
+  setupNotchWindows(createNotchWindow, STRIP_HEIGHT)
+  // Its PowerShell compiles C# on start; let the notch paint first.
+  setTimeout(checkAndApplyFullscreenState, 2000)
+
+  const initialSettings = (readStore().settings ?? {}) as Record<string, unknown>
   const savedShortcut = (initialSettings.keyboardShortcut as string) || DEFAULT_SHORTCUT
   registerGlobalShortcut(savedShortcut)
 })
@@ -154,14 +169,11 @@ const cleanupAndQuit = () => {
   stopSmtc()
   stopMediaIpc()
   stopPrivacyIpc()
+  stopUsageIpc()
   stopScreenshotWatch()
   stopFullscreenWatch()
-}
-
-app.on('window-all-closed', () => {
-  cleanupAndQuit()
   app.quit()
-})
+}
 
 app.on('will-quit', () => {
   cleanupAndQuit()

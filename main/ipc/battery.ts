@@ -1,54 +1,78 @@
-import { ipcMain } from 'electron'
-import { exec } from 'child_process'
+/**
+ * Battery IPC Handler
+ *
+ * Chromium restricts navigator.getBattery() in non-HTTPS Electron apps.
+ * This handler uses powerMonitor (for AC/battery power events) and a Win32_Battery
+ * PowerShell query to return accurate real-time battery status on Windows.
+ */
+import { BrowserWindow, ipcMain, powerMonitor } from 'electron'
+import { execFile } from 'child_process'
 
 export interface BatteryState {
   level: number
   charging: boolean
-  isLow: boolean
+  supported: boolean
 }
 
-let cachedBattery: BatteryState | null = null
+let cachedState: BatteryState = { level: 1, charging: true, supported: false }
 
-const PS_BATTERY = `
-$b = Get-CimInstance Win32_Battery -ErrorAction SilentlyContinue | Select-Object -First 1
-if ($b) {
-    [PSCustomObject]@{
-        level = [int]$b.EstimatedChargeRemaining
-        charging = [bool]($b.BatteryStatus -eq 2 -or $b.BatteryStatus -eq 6 -or $b.BatteryStatus -eq 7 -or $b.BatteryStatus -eq 8)
-    } | ConvertTo-Json -Compress
-} else {
-    "{}"
-}
-`
+const queryBattery = (): Promise<BatteryState> =>
+  new Promise((resolve) => {
+    // Check power monitor status
+    const isOnBattery = powerMonitor.isOnBatteryPower()
+    const charging = !isOnBattery
 
-export function fetchSystemBattery(): Promise<BatteryState | null> {
-  return new Promise((resolve) => {
-    exec(
-      `powershell -NoProfile -ExecutionPolicy Bypass -Command "${PS_BATTERY.replace(/\r?\n/g, ' ')}"`,
-      { timeout: 5000 },
-      (err, stdout) => {
-        if (err || !stdout.trim()) return resolve(cachedBattery)
-        try {
-          const parsed = JSON.parse(stdout.trim())
-          if (typeof parsed.level === 'number') {
-            const level = Math.min(100, Math.max(0, parsed.level))
-            const charging = Boolean(parsed.charging)
-            cachedBattery = {
-              level,
-              charging,
-              isLow: level <= 20 && !charging,
-            }
-            return resolve(cachedBattery)
-          }
-        } catch {}
-        return resolve(cachedBattery)
-      }
+    // Query WMI for battery percentage on Windows
+    execFile(
+      'powershell.exe',
+      [
+        '-NoProfile',
+        '-NonInteractive',
+        '-Command',
+        '(Get-WmiObject Win32_Battery -ErrorAction SilentlyContinue | Select-Object -First 1 | ForEach-Object { "$($_.EstimatedChargeRemaining) $($_.BatteryStatus)" })',
+      ],
+      { windowsHide: true },
+      (_err, stdout) => {
+        const line = stdout.trim()
+        if (!line) {
+          // No battery (Desktop PC or unsupported)
+          cachedState = { level: 1, charging: true, supported: false }
+          resolve(cachedState)
+          return
+        }
+
+        const [levelStr, statusStr] = line.split(' ')
+        const rawLevel = Number(levelStr)
+        // BatteryStatus: 2 = Charging / Fully Charged on AC power
+        const isCharging = statusStr === '2' || charging
+        const level = Number.isFinite(rawLevel) ? Math.min(1, Math.max(0, rawLevel / 100)) : 1
+
+        cachedState = {
+          level,
+          charging: isCharging,
+          supported: true,
+        }
+        resolve(cachedState)
+      },
     )
   })
+
+const broadcastState = async () => {
+  const state = await queryBattery()
+  for (const window of BrowserWindow.getAllWindows()) {
+    window.webContents.send('battery:state', state)
+  }
 }
 
 export function registerBatteryIpc() {
+  // Query battery initially
+  void queryBattery()
+
   ipcMain.handle('battery:get', async () => {
-    return fetchSystemBattery()
+    return await queryBattery()
   })
+
+  // Listen to power state changes
+  powerMonitor.on('on-battery', () => void broadcastState())
+  powerMonitor.on('on-ac', () => void broadcastState())
 }

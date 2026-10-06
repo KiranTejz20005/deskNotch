@@ -3,6 +3,7 @@ import { dialog, ipcMain } from 'electron'
 import fs from 'fs'
 import path from 'path'
 import { readStore, writeStore } from '../store'
+import { announceStore } from './store'
 
 export function registerPhotoIpc() {
   /** Opens a picker and returns the chosen image as a data URL, or null if the
@@ -24,6 +25,7 @@ export function registerPhotoIpc() {
       const dataUrl = `data:image/${mime};base64,${data}`
 
       writeStore({ ...readStore(), photo: dataUrl })
+      announceStore('photo', dataUrl)
       return dataUrl
     } catch (error) {
       console.error('[photo] could not read image:', error)

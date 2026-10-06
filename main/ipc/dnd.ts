@@ -123,10 +123,15 @@ export function setupDndIpc() {
 
   ipcMain.handle('dnd:toggle', (_evt, targetEnabled?: boolean) => {
     const nextState = typeof targetEnabled === 'boolean' ? targetEnabled : !cachedState.enabled
-    if (psProcess && psProcess.stdin) {
+    if (psProcess && psProcess.stdin && !psProcess.stdin.destroyed) {
       psProcess.stdin.write(`SET:${nextState}\n`)
     }
     cachedState = { enabled: nextState }
+    BrowserWindow.getAllWindows().forEach((win) => {
+      if (!win.isDestroyed()) {
+        win.webContents.send('dnd:change', cachedState)
+      }
+    })
     return cachedState
   })
 }

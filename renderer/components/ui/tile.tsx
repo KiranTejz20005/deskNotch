@@ -46,7 +46,9 @@ interface TileProps {
  * The width springs, so a card that grows pushes its neighbours smoothly.
  */
 export const Tile: React.FC<TileProps> = ({ width, height = TILE, glow, tinted, onClick, label, className = '', clip = true, children }) => {
-  const Component = onClick ? motion.button : motion.div
+  // A div acting as a button, not a <button>: cards hold text fields, and a
+  // Space or Enter typed in a field inside a real button clicks the button.
+  const Component = motion.div
   const alone = useContext(AloneContext)
   const [hovered, setHovered] = useState(false)
 
@@ -55,8 +57,18 @@ export const Tile: React.FC<TileProps> = ({ width, height = TILE, glow, tinted, 
 
   return (
     <Component
-      type={onClick ? 'button' : undefined}
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : undefined}
       aria-label={onClick ? label : undefined}
+      onKeyDown={
+        onClick &&
+        ((event: React.KeyboardEvent) => {
+          // Only the card's own keys: never a key typed in something inside it.
+          if (event.target !== event.currentTarget || (event.key !== 'Enter' && event.key !== ' ')) return
+          event.preventDefault()
+          onClick()
+        })
+      }
       onClick={
         onClick &&
         ((event: React.MouseEvent) => {

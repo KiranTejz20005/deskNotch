@@ -115,37 +115,7 @@ nextjs-portal,
     inset 0 0 0 1px rgba(255, 255, 255, 0.04);
 }
 
-/* The lit top edge, brightest at the centre where a real bevel would catch
-   the most light. */
-.glass::before {
-  content: '';
-  position: absolute;
-  inset-inline: 10%;
-  top: 0;
-  height: 1px;
-  pointer-events: none;
-  background: linear-gradient(
-    to right,
-    transparent,
-    rgba(255, 255, 255, 0.4),
-    transparent
-  );
-}
 
-/* A cool sheen falling across the upper-left, which is what actually sells
-   the material — without it the surface is just a dark panel. */
-.glass::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  pointer-events: none;
-  background: radial-gradient(
-    130% 90% at 12% -20%,
-    rgba(190, 215, 255, 0.07),
-    transparent 58%
-  );
-}
 
 /* Content needs to sit above both pseudo-elements. */
 .glass > * {

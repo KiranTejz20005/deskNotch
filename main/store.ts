@@ -21,9 +21,14 @@ export interface StoreShape {
   pins: string[]
   /** Completed focus-timer sessions, kept for up to 90 days. */
   focusLog: unknown[]
+  /** Reminders set from the companion: { id, at, message }. */
+  reminders: unknown[]
+  /** Whether the user let deskNotch read Claude Code's and Codex's logins to
+   *  fetch plan limits (ipc/limits.ts). null: not asked yet. */
+  aiConsent: boolean | null
 }
 
-const defaults: StoreShape = { todos: [], settings: {}, photo: null, shelf: [], pins: [], focusLog: [] }
+const defaults: StoreShape = { todos: [], settings: {}, photo: null, shelf: [], pins: [], focusLog: [], reminders: [], aiConsent: null }
 
 let cache: StoreShape | null = null
 

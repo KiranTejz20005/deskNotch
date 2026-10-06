@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { onStoreChange } from '../lib/store'
 
 export type Task = {
   id: string
@@ -98,6 +99,8 @@ export function useTasks(): TaskStore {
         loaded.current = true
       })
   }, [])
+
+  useEffect(() => onStoreChange<Task[]>('todos', setTasks), [])
 
   useEffect(() => {
     if (!loaded.current) return

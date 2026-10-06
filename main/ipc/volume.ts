@@ -13,115 +13,128 @@ function initVolumeProcess() {
   if (process.platform !== 'win32') return
   if (psProcess) return
 
-  const psScript = `
-$code = @"
-using System;
-using System.Runtime.InteropServices;
-
-namespace AudioEndpoint {
-    [ComImport, Guid("BCDE0385-A544-454C-8D2F-40778249A40D"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-    internal interface IMMDeviceEnumerator {
-        int EnumAudioEndpoints(int dataFlow, int stateMask, out IntPtr ppDevices);
-        int GetDefaultAudioEndpoint(int dataFlow, int role, out IMMDevice ppDevice);
-    }
-    [ComImport, Guid("D666063F-1587-4E43-81F1-B948E807363F"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-    internal interface IMMDevice {
-        int Activate(ref Guid iid, int dwClsCtx, IntPtr pActivationParams, [MarshalAs(UnmanagedType.IUnknown)] out object ppInterface);
-    }
-    [ComImport, Guid("5CDF2C82-841E-4546-9722-0CF74078229A"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-    internal interface IAudioEndpointVolume {
-        int RegisterControlChangeNotify(IntPtr pNotify);
-        int UnregisterControlChangeNotify(IntPtr pNotify);
-        int GetChannelCount(out uint pnChannelCount);
-        int SetMasterVolumeLevel(float fLevelDB, ref Guid pguidEventContext);
-        int SetMasterVolumeLevelScalar(float fLevelScalar, ref Guid pguidEventContext);
-        int GetMasterVolumeLevel(out float pfLevelDB);
-        int GetMasterVolumeLevelScalar(out float pfLevelScalar);
-        int SetMute(bool bMute, ref Guid pguidEventContext);
-        int GetMute(out bool pbMute);
-    }
-    [ComImport, Guid("A95664D2-9614-4F35-A746-DE8DB63617E6")]
-    internal class MMDeviceEnumeratorComObject { }
-
-    public class Audio {
-        public static float GetVolume() {
-            try {
-                var enumerator = (IMMDeviceEnumerator)(new MMDeviceEnumeratorComObject());
-                IMMDevice dev;
-                enumerator.GetDefaultAudioEndpoint(0, 1, out dev);
-                var iid = new Guid("5CDF2C82-841E-4546-9722-0CF74078229A");
-                object obj;
-                dev.Activate(ref iid, 23, IntPtr.Zero, out obj);
-                var endpoint = (IAudioEndpointVolume)obj;
-                float vol;
-                endpoint.GetMasterVolumeLevelScalar(out vol);
-                return vol;
-            } catch { return 0.5f; }
-        }
-        public static bool GetMute() {
-            try {
-                var enumerator = (IMMDeviceEnumerator)(new MMDeviceEnumeratorComObject());
-                IMMDevice dev;
-                enumerator.GetDefaultAudioEndpoint(0, 1, out dev);
-                var iid = new Guid("5CDF2C82-841E-4546-9722-0CF74078229A");
-                object obj;
-                dev.Activate(ref iid, 23, IntPtr.Zero, out obj);
-                var endpoint = (IAudioEndpointVolume)obj;
-                bool mute;
-                endpoint.GetMute(out mute);
-                return mute;
-            } catch { return false; }
-        }
-        public static void SetVolume(float vol) {
-            try {
-                var enumerator = (IMMDeviceEnumerator)(new MMDeviceEnumeratorComObject());
-                IMMDevice dev;
-                enumerator.GetDefaultAudioEndpoint(0, 1, out dev);
-                var iid = new Guid("5CDF2C82-841E-4546-9722-0CF74078229A");
-                object obj;
-                dev.Activate(ref iid, 23, IntPtr.Zero, out obj);
-                var endpoint = (IAudioEndpointVolume)obj;
-                Guid g = Guid.Empty;
-                endpoint.SetMasterVolumeLevelScalar(vol, ref g);
-            } catch {}
-        }
-        public static void SetMute(bool mute) {
-            try {
-                var enumerator = (IMMDeviceEnumerator)(new MMDeviceEnumeratorComObject());
-                IMMDevice dev;
-                enumerator.GetDefaultAudioEndpoint(0, 1, out dev);
-                var iid = new Guid("5CDF2C82-841E-4546-9722-0CF74078229A");
-                object obj;
-                dev.Activate(ref iid, 23, IntPtr.Zero, out obj);
-                var endpoint = (IAudioEndpointVolume)obj;
-                Guid g = Guid.Empty;
-                endpoint.SetMute(mute, ref g);
-            } catch {}
-        }
-    }
-}
-"@
-Add-Type -TypeDefinition $code -ErrorAction SilentlyContinue
-
-while ($true) {
-    $line = [Console]::In.ReadLine()
-    if ($null -eq $line) { break }
-    if ($line.StartsWith("set ")) {
-        $v = [float]::Parse($line.Substring(4))
-        [AudioEndpoint.Audio]::SetVolume($v)
-    } elseif ($line.StartsWith("mute ")) {
-        $m = $line.Substring(5) -eq "1"
-        [AudioEndpoint.Audio]::SetMute($m)
-    }
-    $vol = [int]([Math]::Round([AudioEndpoint.Audio]::GetVolume() * 100))
-    $mute = [AudioEndpoint.Audio]::GetMute()
-    [Console]::Out.WriteLine("STATE:$vol:$mute")
-    [Console]::Out.Flush()
-}
-`
+  const psScript = [
+    '$code = @"',
+    'using System;',
+    'using System.Runtime.InteropServices;',
+    '',
+    'namespace AudioEndpoint {',
+    '    [ComImport, Guid("BCDE0385-A544-454C-8D2F-40778249A40D")]',
+    '    internal class MMDeviceEnumeratorComObject { }',
+    '',
+    '    [Guid("A95664D2-9614-4F35-A746-DE8DB63617E6"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]',
+    '    internal interface IMMDeviceEnumerator {',
+    '        int EnumAudioEndpoints(int dataFlow, int stateMask, out IntPtr ppDevices);',
+    '        int GetDefaultAudioEndpoint(int dataFlow, int role, out IMMDevice ppDevice);',
+    '    }',
+    '    [Guid("D666063F-1587-4E43-81F1-B948E807363F"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]',
+    '    internal interface IMMDevice {',
+    '        int Activate(ref Guid iid, int dwClsCtx, IntPtr pActivationParams, [MarshalAs(UnmanagedType.IUnknown)] out object ppInterface);',
+    '    }',
+    '    [Guid("5CDF2C82-841E-4546-9722-0CF74078229A"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]',
+    '    internal interface IAudioEndpointVolume {',
+    '        int RegisterControlChangeNotify(IntPtr pNotify);',
+    '        int UnregisterControlChangeNotify(IntPtr pNotify);',
+    '        int GetChannelCount(out uint pnChannelCount);',
+    '        int SetMasterVolumeLevel(float fLevelDB, ref Guid pguidEventContext);',
+    '        int SetMasterVolumeLevelScalar(float fLevelScalar, ref Guid pguidEventContext);',
+    '        int GetMasterVolumeLevel(out float pfLevelDB);',
+    '        int GetMasterVolumeLevelScalar(out float pfLevelScalar);',
+    '        int SetMute([MarshalAs(UnmanagedType.Bool)] bool bMute, ref Guid pguidEventContext);',
+    '        int GetMute(out bool pbMute);',
+    '    }',
+    '',
+    '    public class Audio {',
+    '        public static float GetVolume() {',
+    '            try {',
+    '                var enumerator = (IMMDeviceEnumerator)(new MMDeviceEnumeratorComObject());',
+    '                IMMDevice dev;',
+    '                enumerator.GetDefaultAudioEndpoint(0, 1, out dev);',
+    '                var iid = new Guid("5CDF2C82-841E-4546-9722-0CF74078229A");',
+    '                object obj;',
+    '                dev.Activate(ref iid, 23, IntPtr.Zero, out obj);',
+    '                var endpoint = (IAudioEndpointVolume)obj;',
+    '                float vol;',
+    '                endpoint.GetMasterVolumeLevelScalar(out vol);',
+    '                Marshal.ReleaseComObject(endpoint);',
+    '                Marshal.ReleaseComObject(dev);',
+    '                Marshal.ReleaseComObject(enumerator);',
+    '                return vol;',
+    '            } catch { return 0.5f; }',
+    '        }',
+    '        public static bool GetMute() {',
+    '            try {',
+    '                var enumerator = (IMMDeviceEnumerator)(new MMDeviceEnumeratorComObject());',
+    '                IMMDevice dev;',
+    '                enumerator.GetDefaultAudioEndpoint(0, 1, out dev);',
+    '                var iid = new Guid("5CDF2C82-841E-4546-9722-0CF74078229A");',
+    '                object obj;',
+    '                dev.Activate(ref iid, 23, IntPtr.Zero, out obj);',
+    '                var endpoint = (IAudioEndpointVolume)obj;',
+    '                bool mute;',
+    '                endpoint.GetMute(out mute);',
+    '                Marshal.ReleaseComObject(endpoint);',
+    '                Marshal.ReleaseComObject(dev);',
+    '                Marshal.ReleaseComObject(enumerator);',
+    '                return mute;',
+    '            } catch { return false; }',
+    '        }',
+    '        public static void SetVolume(float vol) {',
+    '            try {',
+    '                var enumerator = (IMMDeviceEnumerator)(new MMDeviceEnumeratorComObject());',
+    '                IMMDevice dev;',
+    '                enumerator.GetDefaultAudioEndpoint(0, 1, out dev);',
+    '                var iid = new Guid("5CDF2C82-841E-4546-9722-0CF74078229A");',
+    '                object obj;',
+    '                dev.Activate(ref iid, 23, IntPtr.Zero, out obj);',
+    '                var endpoint = (IAudioEndpointVolume)obj;',
+    '                Guid g = Guid.Empty;',
+    '                endpoint.SetMasterVolumeLevelScalar(vol, ref g);',
+    '                Marshal.ReleaseComObject(endpoint);',
+    '                Marshal.ReleaseComObject(dev);',
+    '                Marshal.ReleaseComObject(enumerator);',
+    '            } catch {}',
+    '        }',
+    '        public static void SetMute(bool mute) {',
+    '            try {',
+    '                var enumerator = (IMMDeviceEnumerator)(new MMDeviceEnumeratorComObject());',
+    '                IMMDevice dev;',
+    '                enumerator.GetDefaultAudioEndpoint(0, 1, out dev);',
+    '                var iid = new Guid("5CDF2C82-841E-4546-9722-0CF74078229A");',
+    '                object obj;',
+    '                dev.Activate(ref iid, 23, IntPtr.Zero, out obj);',
+    '                var endpoint = (IAudioEndpointVolume)obj;',
+    '                Guid g = Guid.Empty;',
+    '                endpoint.SetMute(mute, ref g);',
+    '                Marshal.ReleaseComObject(endpoint);',
+    '                Marshal.ReleaseComObject(dev);',
+    '                Marshal.ReleaseComObject(enumerator);',
+    '            } catch {}',
+    '        }',
+    '    }',
+    '}',
+    '"@',
+    'Add-Type -TypeDefinition $code -ErrorAction Stop',
+    '',
+    'while ($true) {',
+    '    $line = [Console]::In.ReadLine()',
+    '    if ($null -eq $line) { break }',
+    '    if ($line.StartsWith("set ")) {',
+    '        $v = [float]::Parse($line.Substring(4))',
+    '        [AudioEndpoint.Audio]::SetVolume($v)',
+    '    } elseif ($line.StartsWith("mute ")) {',
+    '        $m = $line.Substring(5) -eq "1"',
+    '        [AudioEndpoint.Audio]::SetMute($m)',
+    '    }',
+    '    $vol = [int]([Math]::Round([AudioEndpoint.Audio]::GetVolume() * 100))',
+    '    $mute = [AudioEndpoint.Audio]::GetMute()',
+    '    [Console]::Out.WriteLine("STATE:" + $vol + ":" + $mute)',
+    '    [Console]::Out.Flush()',
+    '}',
+  ].join('\n')
 
   try {
-    psProcess = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', psScript], {
+    psProcess = spawn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', psScript], {
       windowsHide: true,
       stdio: ['pipe', 'pipe', 'ignore'],
     })
@@ -185,6 +198,11 @@ export function registerVolumeIpc() {
     if (psProcess && psProcess.stdin && !psProcess.stdin.destroyed) {
       psProcess.stdin.write(`set ${(num / 100).toFixed(4)}\n`)
     }
+    BrowserWindow.getAllWindows().forEach((w) => {
+      if (!w.isDestroyed()) {
+        w.webContents.send('volume:change', cachedState)
+      }
+    })
     return cachedState
   })
 
@@ -194,6 +212,11 @@ export function registerVolumeIpc() {
     if (psProcess && psProcess.stdin && !psProcess.stdin.destroyed) {
       psProcess.stdin.write(`mute ${nextMuted ? 1 : 0}\n`)
     }
+    BrowserWindow.getAllWindows().forEach((w) => {
+      if (!w.isDestroyed()) {
+        w.webContents.send('volume:change', cachedState)
+      }
+    })
     return cachedState
   })
 }

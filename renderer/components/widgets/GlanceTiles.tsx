@@ -34,9 +34,53 @@ const playerName = (id: string) => {
   return bare.charAt(0).toUpperCase() + bare.slice(1)
 }
 
-const mmss = (seconds: number) => {
-  const s = Math.max(0, Math.round(seconds))
-  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
+/**
+ * Where the track is: a rounded bar in the cover's colour, with a dot at the
+ * spot. Paused, the fill dims and the dot shrinks. With no length known
+ * (most browser tabs), a soft light sweeps along it while playing.
+ *
+ * No minutes and seconds: Windows reports the position only every few
+ * seconds (browsers hardly at all), so a clock here jumped about.
+ */
+const ProgressLine: React.FC<{ progress: number | null; playing: boolean; tint: string }> = ({ progress, playing, tint }) => {
+  const move = { ease: 'linear' as const, duration: 0.5 }
+  return (
+    <div className="relative flex h-[10px] items-center">
+      <div className="relative h-[4px] w-full overflow-hidden rounded-full bg-white/[0.1]">
+        {progress === null ? (
+          // Length unknown: a light gliding along while it plays.
+          <motion.div
+            className="absolute inset-y-0 w-[40%] rounded-full"
+            style={{ background: `linear-gradient(90deg, transparent, rgba(${tint}, 0.9), transparent)` }}
+            initial={{ left: '-40%' }}
+            animate={playing ? { left: ['-40%', '100%'] } : { left: '30%', opacity: 0.35 }}
+            transition={playing ? { duration: 2.4, ease: 'easeInOut', repeat: Infinity, repeatDelay: 0.4 } : { duration: 0.4 }}
+          />
+        ) : (
+          <motion.div
+            className="h-full rounded-full"
+            style={{
+              background: `linear-gradient(90deg, rgba(${tint}, 0.55), rgb(${tint}))`,
+              boxShadow: `0 0 8px rgba(${tint}, 0.55)`,
+            }}
+            initial={false}
+            animate={{ width: `${progress * 100}%`, opacity: playing ? 1 : 0.45 }}
+            transition={{ width: move, opacity: { duration: 0.3 } }}
+          />
+        )}
+      </div>
+      {/* Where it is now, outside the track so it is not clipped. */}
+      {progress !== null && (
+        <motion.span
+          className="absolute top-1/2 h-[8px] w-[8px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-white"
+          style={{ boxShadow: `0 0 6px rgba(${tint}, 0.9)` }}
+          initial={false}
+          animate={{ left: `${progress * 100}%`, scale: playing ? 1 : 0.6 }}
+          transition={{ left: move, scale: { duration: 0.3 } }}
+        />
+      )}
+    </div>
+  )
 }
 
 /** Three bars that dance while music plays and lie flat when paused. */
@@ -56,82 +100,66 @@ const Bars: React.FC<{ playing: boolean; color: string }> = ({ playing, color })
 
 export const MediaTile: React.FC<{ media: NowPlaying; tint: string }> = ({ media, tint }) => {
   const progress = useMediaProgress(media)
-  const elapsed = progress * media.duration
 
   return (
-  <Tile
-    width={MEDIA_WIDTH}
-    tinted
-    glow={`radial-gradient(70% 150% at 14% 50%, rgba(${tint}, 0.4), rgba(${tint}, 0.08) 55%, transparent 78%)`}
-  >
-    <div className="flex h-full items-stretch gap-3.5">
-      {/* The art is the way in: tap it and the player comes forward, maximised. */}
-      <motion.button
-        type="button"
-        aria-label="Open the player"
-        title="Open the player"
-        onClick={(event) => {
-          event.stopPropagation()
-          void window.bridge?.invoke('media:focus', media.sourceAppId)
-        }}
-        whileTap={{ scale: 0.95 }}
-        className="group relative aspect-square h-full shrink-0 overflow-hidden rounded-[12px] bg-white/[0.06]"
-        animate={{ scale: media.isPlaying ? 1 : 0.94, opacity: media.isPlaying ? 1 : 0.7 }}
-        transition={spring}
-      >
-        {media.thumbnailUrl && (
-          <img src={media.thumbnailUrl} alt="" className="absolute inset-0 h-full w-full object-cover" />
-        )}
-        <div className="absolute inset-0 rounded-[12px] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.1)]" />
-        <div className="absolute inset-0 grid place-items-center bg-black/50 opacity-0 transition-opacity group-hover:opacity-100">
-          <Maximize2 size={16} strokeWidth={2} className="text-white" />
-        </div>
-      </motion.button>
-
-      <div className="flex min-w-0 flex-1 flex-col justify-between py-0.5">
-        <div className="min-w-0">
-          {/* Where it is playing, and that it is: the source, with the bars. */}
-          <div className="mb-1 flex items-center gap-1.5">
-            <Bars playing={media.isPlaying} color={`rgb(${tint})`} />
-            <span className="truncate text-[8.5px] font-bold uppercase leading-none tracking-[0.12em] text-white/40">
-              {media.isPlaying ? playerName(media.sourceAppId) : `Paused · ${playerName(media.sourceAppId)}`}
-            </span>
-          </div>
-          <ScrollingText className="text-[14px] font-semibold leading-tight tracking-[-0.01em] text-white">
-            {media.title}
-          </ScrollingText>
-          <span className="mt-0.5 block truncate text-[11.5px] leading-tight text-white/50">{media.artist}</span>
-        </div>
-        <div>
-          {/* Where the track is: a hairline, not a scrubber; this is a glance. */}
-          {media.duration > 0 && (
-            <>
-              <div className="h-[3px] overflow-hidden rounded-full bg-white/[0.12]">
-                <motion.div
-                  className="h-full origin-left rounded-full"
-                  style={{ background: `rgb(${tint})`, boxShadow: `0 0 6px rgba(${tint}, 0.6)` }}
-                  animate={{ scaleX: progress }}
-                  transition={{ ease: 'linear', duration: 0.5 }}
-                />
-              </div>
-              <div className="mt-1 flex justify-between text-[9.5px] tabular-nums leading-none text-white/40">
-                <span>{mmss(elapsed)}</span>
-                <span>-{mmss(media.duration - elapsed)}</span>
-              </div>
-            </>
+    <Tile
+      width={MEDIA_WIDTH}
+      tinted
+      glow={`radial-gradient(70% 150% at 14% 50%, rgba(${tint}, 0.4), rgba(${tint}, 0.08) 55%, transparent 78%)`}
+    >
+      <div className="flex h-full items-stretch gap-3.5">
+        {/* The art is the way in: tap it and the player comes forward, maximised. */}
+        <motion.button
+          type="button"
+          aria-label="Open the player"
+          title="Open the player"
+          onClick={(event) => {
+            event.stopPropagation()
+            void window.bridge?.invoke('media:focus', media.sourceAppId)
+          }}
+          whileTap={{ scale: 0.95 }}
+          className="group relative aspect-square h-full shrink-0 overflow-hidden rounded-[12px] bg-white/[0.06]"
+          animate={{ scale: media.isPlaying ? 1 : 0.94, opacity: media.isPlaying ? 1 : 0.7 }}
+          transition={spring}
+        >
+          {media.thumbnailUrl && (
+            <img src={media.thumbnailUrl} alt="" className="absolute inset-0 h-full w-full object-cover" />
           )}
-          <div className="-mb-1 mt-1 flex justify-center">
-            <MediaControls
-              isPlaying={media.isPlaying}
-              onPrevious={() => void window.bridge?.invoke('media:key', 'previous')}
-              onPlayPause={() => void window.bridge?.invoke('media:key', 'play-pause')}
-              onNext={() => void window.bridge?.invoke('media:key', 'next')}
-            />
+          <div className="absolute inset-0 rounded-[12px] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.1)]" />
+          <div className="absolute inset-0 grid place-items-center bg-black/50 opacity-0 transition-opacity group-hover:opacity-100">
+            <Maximize2 size={16} strokeWidth={2} className="text-white" />
+          </div>
+        </motion.button>
+
+        <div className="flex min-w-0 flex-1 flex-col justify-between py-0.5">
+          <div className="min-w-0">
+            {/* Where it is playing, and that it is: the source, with the bars. */}
+            <div className="mb-1 flex items-center gap-1.5">
+              <Bars playing={media.isPlaying} color={`rgb(${tint})`} />
+              <span className="truncate text-[8.5px] font-bold uppercase leading-none tracking-[0.12em] text-white/40">
+                {media.isPlaying ? playerName(media.sourceAppId) : `Paused · ${playerName(media.sourceAppId)}`}
+              </span>
+            </div>
+            <ScrollingText className="text-[14px] font-semibold leading-tight tracking-[-0.01em] text-white">
+              {media.title}
+            </ScrollingText>
+            <span className="mt-0.5 block truncate text-[11.5px] leading-tight text-white/50">{media.artist}</span>
+          </div>
+          <div>
+            {/* Where the track is: a line, not a scrubber; this is a glance. */}
+            <ProgressLine progress={media.duration > 0 ? progress : null} playing={media.isPlaying} tint={tint} />
+            <div className="-mb-1 mt-1.5 flex justify-center">
+              <MediaControls
+                isPlaying={media.isPlaying}
+                onPrevious={() => void window.bridge?.invoke('media:key', 'previous')}
+                onPlayPause={() => void window.bridge?.invoke('media:key', 'play-pause')}
+                onNext={() => void window.bridge?.invoke('media:key', 'next')}
+              />
+            </div>
           </div>
         </div>
       </div>
-    </div>
-  </Tile>
+    </Tile>
   )
 }
 
@@ -160,12 +188,9 @@ export const TimeTile: React.FC = () => {
   )
 }
 
-
 /**
  * Tasks, the way the Reminders widget does it: a coloured title and a count,
- * then the next few as rows with a round checkbox. Ticking one fills the
- * circle, strikes the text, and lets the row slide away a beat later, so the
- * list settles rather than jumps.
+ * then the next few as rows with a round checkbox.
  */
 export const TaskTile: React.FC<{
   tasks: TaskStore

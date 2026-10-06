@@ -1,10 +1,9 @@
-import { app, BrowserWindow, Menu, nativeImage, Tray, type NativeImage } from 'electron'
+import { app, Menu, nativeImage, Tray, type NativeImage, BrowserWindow } from 'electron'
 import path from 'path'
 import fs from 'fs'
-import { isCurrentFullscreenMatch, checkAndApplyFullscreenState } from './fullscreen'
+import { notchWindows } from './display'
 
 let tray: Tray | null = null
-let mainWindowRef: BrowserWindow | null = null
 
 export function getTrayIcon(): NativeImage {
   const candidatePaths = [
@@ -34,8 +33,7 @@ export function getTrayIcon(): NativeImage {
   return nativeImage.createFromDataURL(fallbackBase64)
 }
 
-export function createTray(mainWindow: BrowserWindow): Tray {
-  mainWindowRef = mainWindow
+export function createTray(window?: BrowserWindow): Tray {
   if (tray) return tray
 
   const icon = getTrayIcon()
@@ -79,24 +77,24 @@ export function createTray(mainWindow: BrowserWindow): Tray {
 }
 
 export function showDeskNotch() {
-  if (!mainWindowRef || mainWindowRef.isDestroyed()) return
-
-  if (isCurrentFullscreenMatch()) {
-    checkAndApplyFullscreenState()
-    return
+  for (const [, win] of notchWindows()) {
+    if (win && !win.isDestroyed()) {
+      win.showInactive()
+      win.setAlwaysOnTop(true, 'screen-saver')
+      win.setVisibleOnAllWorkspaces(true)
+      win.setSkipTaskbar(true)
+      win.webContents.send('notch:open')
+    }
   }
-
-  mainWindowRef.showInactive()
-  mainWindowRef.setAlwaysOnTop(true, 'screen-saver')
-  mainWindowRef.setVisibleOnAllWorkspaces(true)
-  mainWindowRef.setSkipTaskbar(true)
 }
 
 export function openSettings() {
-  if (!mainWindowRef || mainWindowRef.isDestroyed()) return
-
   showDeskNotch()
-  mainWindowRef.webContents.send('notch:navigate', 'settings')
+  for (const [, win] of notchWindows()) {
+    if (win && !win.isDestroyed()) {
+      win.webContents.send('notch:navigate', 'settings')
+    }
+  }
 }
 
 export function destroyTray() {

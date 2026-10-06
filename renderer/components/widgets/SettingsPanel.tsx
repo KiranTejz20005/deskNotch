@@ -1,7 +1,7 @@
 import React, { useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import { BotAvatar, type BotAvatarType } from 'bot-avatars'
-import { AppWindow, Bot, ImagePlus, LayoutGrid, Palette, PanelsTopLeft, Power, RectangleHorizontal } from 'lucide-react'
+import { Bot, ImagePlus, LayoutGrid, PanelsTopLeft, Settings as Cog } from 'lucide-react'
 import { usePhoto } from '../../hooks/usePhoto'
 import type { ProviderLimits } from '../../hooks/useAiLimits'
 import { limitChoices, visibleLimits } from './AiOrbs'
@@ -15,8 +15,8 @@ const spring = { type: 'spring' as const, stiffness: 420, damping: 34 }
 /** The page's content height; the notch's Settings size follows it. */
 export const SETTINGS_PANE = 312
 
-/** Default, a soft charcoal notch; Mica, the blurred wallpaper; Glass, a live blur of what is behind. */
-export type NotchStyle = 'black' | 'mica' | 'glass'
+/** Default, a soft charcoal notch; Glass, a live blur of what is behind. */
+export type NotchStyle = 'black' | 'glass'
 
 /** A bot, or the user's own photo. */
 export type Avatar = BotAvatarType | 'photo'
@@ -35,6 +35,8 @@ export interface Settings {
   showAvatar: boolean
   showFocus: boolean
   showAiUsage: boolean
+  /** The Right now card: apps on the mic or camera, and the battery, while there are any. */
+  showStatus: boolean
   ambientVideo: boolean
   albumTint: boolean
   startOnBoot: boolean
@@ -43,8 +45,8 @@ export interface Settings {
   dockSide: DockSide
   /** Views taken off the dock ('glance', 'desk', 'files'); Settings and the lock always stay. */
   hiddenViews: string[]
-  /** What the closed notch shows on its right. */
-  collapsedRight: 'time' | 'ai' | 'weather' | 'battery' | 'bluetooth'
+  /** What the closed notch shows on its right; 'screen' needs ScreenWise / DeskTime installed. */
+  collapsedRight: 'time' | 'ai' | 'screen' | 'weather' | 'battery' | 'bluetooth'
   /** Open the notch on each new screenshot. */
   catchScreenshots: boolean
   /** The apps bar under the notch: Windows' most used, your favourites, or none. */
@@ -67,11 +69,21 @@ export interface Settings {
   hiddenLimits: string[]
   /** Global keyboard shortcut to open deskNotch from anywhere in Windows. */
   keyboardShortcut: string
-  /** The monitor on which deskNotch appears; 'primary' or a display ID string. */
+  /** The monitor deskNotch appears on: 'primary', 'all', 'both', or a display ID string. */
   selectedDisplayId?: string
   /** Hide deskNotch when another app enters fullscreen. */
   hideOnFullscreen?: boolean
+  /** Shrink the closed notch to a sliver while a browser is in front, so it
+   *  does not cover tabs; hovering opens it as usual. */
+  tuckForBrowsers?: boolean
+  /** Leave the notch out of screenshots and screen sharing. */
+  hideInScreenshots?: boolean
+  /** The dock's buttons and icons, for screens where they come out small. */
+  dockSize?: DockSize
 }
+
+export type DockSize = 'default' | 'large' | 'larger'
+export const DOCK_SCALE: Record<DockSize, number> = { default: 1, large: 1.25, larger: 1.5 }
 
 export const DEFAULT_SETTINGS: Settings = {
   showMusic: true,
@@ -85,7 +97,8 @@ export const DEFAULT_SETTINGS: Settings = {
   showThermals: false,
   showAvatar: true,
   showFocus: false,
-  showAiUsage: false,
+  showAiUsage: true,
+  showStatus: false,
   ambientVideo: true,
   albumTint: true,
   startOnBoot: false,
@@ -99,13 +112,16 @@ export const DEFAULT_SETTINGS: Settings = {
   appsOn: ['files'],
   appsSide: 'auto',
   avatar: 'ghost',
-  companionMode: 'focus',
+  companionMode: 'time',
   companionSleeps: 'time',
   focusMinutes: 25,
   hiddenLimits: [],
   keyboardShortcut: 'Ctrl+Alt+Space',
-  selectedDisplayId: 'both',
+  selectedDisplayId: 'all',
   hideOnFullscreen: true,
+  tuckForBrowsers: false,
+  hideInScreenshots: false,
+  dockSize: 'default',
 }
 
 /** The bots on offer: a short, varied few rather than all eighteen. */
@@ -113,9 +129,9 @@ const BOTS: BotAvatarType[] = ['ghost', 'cat', 'blob', 'clover', 'droid', 'alien
 
 /** The three views, by the ids the notch uses. */
 const VIEWS = [
-  { id: 'glance', label: 'Glance' },
-  { id: 'desk', label: 'Desk' },
-  { id: 'files', label: 'Shelf' },
+  { id: 'glance', label: 'Home' },
+  { id: 'desk', label: 'Focus & tasks' },
+  { id: 'files', label: 'Files' },
 ] as const
 
 const halt = (event: React.SyntheticEvent) => event.stopPropagation()
@@ -221,10 +237,10 @@ const Chips: React.FC<{ options: { id: string; label: string; disabled?: boolean
 
 /** One setting: what it is, a line on what it does, and its control. */
 const Row: React.FC<{ title: string; detail?: string; children?: React.ReactNode; below?: React.ReactNode }> = ({ title, detail, children, below }) => (
-  <div className="px-3 py-2">
-    <div className="flex items-center justify-between gap-4">
+  <div className="px-3 py-2.5">
+    <div className="flex min-h-[22px] items-center justify-between gap-4">
       <div className="min-w-0">
-        <div className="text-[12.5px] font-medium text-white/90">{title}</div>
+        <div className="text-[12.5px] text-white/90">{title}</div>
         {detail && <div className="mt-0.5 text-[10.5px] leading-snug text-white/40">{detail}</div>}
       </div>
       {children}
@@ -388,16 +404,16 @@ const ShortcutSettingRow: React.FC<{
 
 // ── Sections ────────────────────────────────────────────────────────────────
 
-type SectionId = 'glance' | 'companion' | 'closed' | 'apps' | 'tabs' | 'look' | 'general'
+/** The blocks of settings; a sidebar section shows one or more of them. */
+type PartId = 'glance' | 'companion' | 'closed' | 'apps' | 'tabs' | 'look' | 'general'
+type SectionId = 'notch' | 'companion' | 'layout' | 'general'
 
-const SECTIONS: { id: SectionId; label: string; icon: React.ReactNode }[] = [
-  { id: 'glance', label: 'Glance', icon: <LayoutGrid size={13} strokeWidth={2} /> },
-  { id: 'companion', label: 'Companion', icon: <Bot size={13} strokeWidth={2} /> },
-  { id: 'closed', label: 'Closed notch', icon: <RectangleHorizontal size={13} strokeWidth={2} /> },
-  { id: 'apps', label: 'Apps', icon: <AppWindow size={13} strokeWidth={2} /> },
-  { id: 'tabs', label: 'Tabs & dock', icon: <PanelsTopLeft size={13} strokeWidth={2} /> },
-  { id: 'look', label: 'Appearance', icon: <Palette size={13} strokeWidth={2} /> },
-  { id: 'general', label: 'General', icon: <Power size={13} strokeWidth={2} /> },
+/** Four sections, few enough to take in at once; each names its blocks when it has several. */
+const SECTIONS: { id: SectionId; label: string; icon: React.ReactNode; parts: { id: PartId; title: string }[] }[] = [
+  { id: 'notch', label: 'Notch', icon: <LayoutGrid size={13} strokeWidth={2} />, parts: [{ id: 'glance', title: 'Home cards' }, { id: 'closed', title: 'Closed notch' }] },
+  { id: 'companion', label: 'Companion', icon: <Bot size={13} strokeWidth={2} />, parts: [{ id: 'companion', title: '' }] },
+  { id: 'layout', label: 'Layout', icon: <PanelsTopLeft size={13} strokeWidth={2} />, parts: [{ id: 'tabs', title: 'Tabs' }, { id: 'apps', title: 'Apps bar' }] },
+  { id: 'general', label: 'General', icon: <Cog size={13} strokeWidth={2} />, parts: [{ id: 'look', title: 'Appearance' }, { id: 'general', title: 'System' }] },
 ]
 
 interface SettingsPanelProps {
@@ -405,7 +421,63 @@ interface SettingsPanelProps {
   onChange: (next: Settings) => void
   /** The AI limits found, to offer them one by one. */
   aiLimits: ProviderLimits[] | null
+  /** ScreenWise is installed, so the screen-time reading can be picked. */
+  desktimeInstalled: boolean
 }
+
+/** The updater's state, as main/updater.ts reports it. */
+type UpdateState = {
+  status: 'dev' | 'store' | 'idle' | 'checking' | 'none' | 'error' | 'downloading' | 'ready'
+  version: string
+  next?: string
+  percent?: number
+}
+
+/** Version, update status, and the one thing to do about it. */
+const UpdateRow: React.FC = () => {
+  const [update, setUpdate] = useState<UpdateState | null>(null)
+  React.useEffect(() => {
+    void window.bridge?.invoke<UpdateState>('update:get').then(setUpdate)
+    return window.bridge?.on<UpdateState>('update:state', setUpdate)
+  }, [])
+  if (!update) return null
+  const detail = {
+    dev: 'Updates run in the installed app',
+    store: 'Updates come from the Microsoft Store',
+    idle: undefined,
+    checking: 'Checking for updates…',
+    none: 'Up to date',
+    error: "Couldn't check for updates",
+    downloading: `Downloading ${update.next ?? ''} · ${update.percent ?? 0}%`,
+    // It installs itself once the PC is left alone for a minute; nothing to press.
+    ready: `Version ${update.next} installs when you step away`,
+  }[update.status]
+  const busy = update.status === 'checking' || update.status === 'downloading' || update.status === 'dev'
+  return (
+    <Row title={`Version ${update.version}`} detail={detail}>
+      {update.status !== 'store' && update.status !== 'ready' && (
+        <button
+          type="button"
+          disabled={busy}
+          onClick={(event) => {
+            halt(event)
+            void window.bridge?.invoke('update:check')
+          }}
+          className="h-[24px] shrink-0 rounded-full bg-white/[0.08] px-3 text-[11px] font-medium text-white/75 transition-colors hover:bg-white/[0.14] hover:text-white disabled:opacity-35"
+        >
+          Check for updates
+        </button>
+      )}
+    </Row>
+  )
+}
+
+/** GitHub's mark (Octicons mark-github), for the link to the repo. */
+const GitHubMark: React.FC = () => (
+  <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden fill="currentColor">
+    <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z" />
+  </svg>
+)
 
 export interface DisplayInfo {
   id: string
@@ -421,11 +493,16 @@ export interface DisplayInfo {
  * left, one section at a time on the right as grouped rows, and every row
  * saying in plain words what it changes.
  */
-export const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onChange, aiLimits }) => {
+export const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onChange, aiLimits, desktimeInstalled }) => {
   const set = <K extends keyof Settings>(key: K, value: Settings[K]) => onChange({ ...settings, [key]: value })
   const { photo, pick } = usePhoto()
-  const [section, setSection] = useState<SectionId>('glance')
+  const [section, setSection] = useState<SectionId>('notch')
   const [displays, setDisplays] = React.useState<DisplayInfo[]>([])
+  const [store, setStore] = useState(false)
+
+  React.useEffect(() => {
+    void window.bridge?.invoke<boolean>('app:is-store').then((s) => setStore(Boolean(s)))
+  }, [])
 
   React.useEffect(() => {
     window.bridge?.invoke<DisplayInfo[]>('display:get-all').then((list) => {
@@ -437,56 +514,56 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onChange
     return () => unsub?.()
   }, [])
 
+  const displayOptions = [
+    ...displays.map((d, i) => ({ id: d.id, label: d.isPrimary ? `${i + 1} (main)` : `${i + 1}` })),
+    { id: 'all', label: 'All' },
+  ]
+  const displayValue = displayOptions.some((o) => o.id === settings.selectedDisplayId)
+    ? settings.selectedDisplayId!
+    : (displays.find((d) => d.isPrimary)?.id ?? 'all')
+
   const hidden = settings.hiddenLimits ?? []
   const aiCards = visibleLimits(aiLimits, hidden).length
   const count = cardCount(settings, aiCards)
   /** Whether switching this on still fits the glance. */
   const fits = (key: keyof Settings) => cardCount({ ...settings, [key]: true }, aiCards) <= MAX_CARDS
-  const card = (
-    key:
-      | 'showMusic'
-      | 'showTasks'
-      | 'showAvatar'
-      | 'showAiUsage'
-      | 'showVolume'
-      | 'showStopwatch'
-      | 'showClipboard'
-      | 'showWeather'
-      | 'showDnd'
-      | 'showNotifications'
-      | 'showThermals',
-    label: string,
-  ) => <Switch label={label} on={settings[key]} disabled={!settings[key] && !fits(key)} onChange={(v) => set(key, v)} />
+  const card = (key: 'showMusic' | 'showTasks' | 'showAvatar' | 'showAiUsage' | 'showStatus', label: string) => (
+    <Switch label={label} on={settings[key]} disabled={!settings[key] && !fits(key)} onChange={(v) => set(key, v)} />
+  )
+
   const hiddenViews = settings.hiddenViews ?? []
 
-  const content: Record<SectionId, React.ReactNode> = {
+  const content: Record<PartId, React.ReactNode> = {
     glance: (
       <>
-        <Group note={count > MAX_CARDS ? `${count} cards chosen; the glance holds ${MAX_CARDS}. Turn one off.` : `${count} of ${MAX_CARDS} cards. A switch greys out when the glance is full.`}>
-          <Row title="Companion" detail="Your bot, in the mode you pick under Companion">
+        <Group note={count > MAX_CARDS ? `Only ${MAX_CARDS} cards fit. Turn one off.` : undefined}>
+          <Row title="Companion">
             {card('showAvatar', 'Companion')}
           </Row>
-          <Row title="Now playing" detail="The song or video, with controls">
+          <Row title="Now playing">
             {card('showMusic', 'Now playing')}
           </Row>
-          <Row title="Next task" detail="Your next few tasks, tickable">
-            {card('showTasks', 'Next task')}
+          <Row title="Tasks">
+            {card('showTasks', 'Tasks')}
+          </Row>
+          <Row title="Status" detail="Mic, camera, battery and PC usage">
+            {card('showStatus', 'Status')}
           </Row>
           <Row title="Weather" detail="Current temperature & 4-day forecast">
-            {card('showWeather', 'Weather')}
+            <Switch label="Weather" on={settings.showWeather} onChange={(v) => set('showWeather', v)} />
           </Row>
           <Row title="Focus Mode (DND)" detail="Windows Do Not Disturb toggle">
-            {card('showDnd', 'Focus Mode')}
+            <Switch label="Focus Mode" on={settings.showDnd} onChange={(v) => set('showDnd', v)} />
           </Row>
           <Row title="Notification Peek" detail="Windows system notifications stream">
-            {card('showNotifications', 'Notification Peek')}
+            <Switch label="Notification Peek" on={settings.showNotifications} onChange={(v) => set('showNotifications', v)} />
           </Row>
           <Row title="Laptop Thermals" detail="CPU & System temperature hardware monitor">
-            {card('showThermals', 'Laptop Thermals')}
+            <Switch label="Laptop Thermals" on={settings.showThermals} onChange={(v) => set('showThermals', v)} />
           </Row>
           <Row
             title="AI usage"
-            detail="How much of your Claude and Codex limits is used"
+            detail="Claude and Codex limits"
             below={
               settings.showAiUsage && limitChoices(aiLimits).length > 0 ? (
                 <Chips
@@ -511,7 +588,6 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onChange
         <Group>
           <Row
             title="Character"
-            detail="A bot, or your own photo"
             below={
               <div className="-ml-1 flex items-center gap-0.5">
                 {BOTS.map((bot) => (
@@ -555,10 +631,17 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onChange
               </div>
             }
           />
-          <Row title="Mode" detail="What the companion does on the glance">
-            <Segmented id="mode" options={COMPANION_MODES} value={settings.companionMode} onChange={(v) => set('companionMode', v)} />
+          <Row title="Mode">
+            <Segmented
+              id="mode"
+              options={COMPANION_MODES}
+              value={settings.companionMode === 'screen' && !desktimeInstalled ? 'focus' : settings.companionMode}
+              onChange={(v) => set('companionMode', v)}
+              disabled={desktimeInstalled ? [] : ['screen']}
+              disabledTitle="Needs ScreenWise installed"
+            />
           </Row>
-          <Row title="Sleeps" detail="When it dozes off">
+          <Row title="Sleep">
             <Segmented id="sleeps" options={COMPANION_SLEEPS} value={settings.companionSleeps ?? 'time'} onChange={(v) => set('companionSleeps', v)} />
           </Row>
         </Group>
@@ -566,22 +649,40 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onChange
     ),
     closed: (
       <>
-        <Group note="The left side shows music, a running focus timer, or the time. Privacy dots appear when the mic or camera is in use.">
-          <Row title="Right side" detail="What the small bar shows on its right">
+        <Group>
+          <Row title="Right side">
             <Segmented
               id="right"
               options={[
                 { id: 'time', label: 'Time' },
-                { id: 'ai', label: 'AI' },
+                { id: 'ai', label: 'AI usage' },
+                { id: 'screen', label: 'Screen time' },
                 { id: 'weather', label: 'Weather' },
                 { id: 'battery', label: 'Battery' },
                 { id: 'bluetooth', label: 'Bluetooth' },
               ] as const}
-              value={settings.collapsedRight ?? 'time'}
+              // Picked earlier, then ScreenWise was uninstalled: the clock stands in.
+              value={settings.collapsedRight === 'screen' && !desktimeInstalled ? 'time' : (settings.collapsedRight ?? 'time')}
               onChange={(v) => set('collapsedRight', v)}
+              disabled={desktimeInstalled ? [] : ['screen']}
+              disabledTitle="Needs ScreenWise installed"
             />
           </Row>
-          <Row title="Catch screenshots" detail="Open the notch on a screenshot you just took">
+          {!desktimeInstalled && (
+            <Row title="Screen time" detail="Requires ScreenWise">
+              <button
+                type="button"
+                onClick={(event) => {
+                  halt(event)
+                  void window.bridge?.invoke('desktime:download')
+                }}
+                className="h-[22px] shrink-0 rounded-full bg-white px-2.5 text-[10.5px] font-medium text-black"
+              >
+                Get ScreenWise
+              </button>
+            </Row>
+          )}
+          <Row title="Open on screenshot">
             <Switch label="Catch screenshots" on={settings.catchScreenshots ?? true} onChange={(v) => set('catchScreenshots', v)} />
           </Row>
         </Group>
@@ -590,7 +691,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onChange
     apps: (
       <>
         <Group>
-          <Row title="Apps bar" detail="Four in view under the notch, two beside it; scroll for more">
+          <Row title="Show">
             <Segmented
               id="apps"
               options={[
@@ -603,7 +704,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onChange
             />
           </Row>
           {(settings.deskApps ?? 'most') !== 'off' && (
-            <Row title="Position" detail="Never the same side as the tabs dock; Auto picks a free one">
+            <Row title="Position">
               <Segmented
                 id="apps-side"
                 options={[
@@ -612,10 +713,8 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onChange
                   { id: 'bottom', label: 'Bottom' },
                   { id: 'right', label: 'Right' },
                 ] as const}
-                // A side the dock has (older settings) is really auto: show that.
                 value={(settings.appsSide ?? 'auto') === (settings.dockSide ?? 'bottom') ? 'auto' : (settings.appsSide ?? 'auto')}
                 onChange={(v) => set('appsSide', v)}
-                // One side, one thing: the tabs dock's side is taken.
                 disabled={[settings.dockSide ?? 'bottom']}
                 disabledTitle="The tabs dock is here"
               />
@@ -623,8 +722,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onChange
           )}
           {(settings.deskApps ?? 'most') !== 'off' && (
             <Row
-              title="Show it on"
-              detail="The views that get the bar"
+              title="Show on"
               below={
                 <Chips
                   options={VIEWS.map((v) => ({ id: v.id, label: v.label }))}
@@ -640,15 +738,15 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onChange
           )}
         </Group>
         {(settings.deskApps ?? 'most') === 'favorites' && (
-          <p className="px-3 text-[10px] leading-snug text-white/35">Add favourites with the + on the bar itself; hover one to remove it.</p>
+          <p className="px-3 text-[10px] leading-snug text-white/35">Add favourites with + on the apps bar.</p>
         )}
       </>
     ),
     tabs: (
       <>
-        <Group note="Settings and the lock always stay on the dock. With every view off, the notch opens on Glance.">
+        <Group>
           {VIEWS.map((v) => (
-            <Row key={v.id} title={v.label} detail={v.id === 'glance' ? 'Your cards' : v.id === 'desk' ? 'Focus timer and all tasks' : 'Files you parked'}>
+            <Row key={v.id} title={v.label}>
               <Switch
                 label={`${v.label} tab`}
                 on={!hiddenViews.includes(v.id)}
@@ -658,7 +756,19 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onChange
           ))}
         </Group>
         <Group>
-          <Row title="Dock position" detail="Where the tabs sit around the notch">
+          <Row title="Size">
+            <Segmented
+              id="dock-size"
+              options={[
+                { id: 'default', label: 'Default' },
+                { id: 'large', label: 'Large' },
+                { id: 'larger', label: 'Larger' },
+              ] as const}
+              value={settings.dockSize ?? 'default'}
+              onChange={(v) => set('dockSize', v)}
+            />
+          </Row>
+          <Row title="Position">
             <Segmented
               id="dock"
               options={[
@@ -668,7 +778,6 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onChange
               ] as const}
               value={settings.dockSide ?? 'bottom'}
               onChange={(v) => set('dockSide', v)}
-              // One side, one thing: a side the apps bar was put on is taken.
               disabled={(settings.appsSide ?? 'auto') !== 'auto' && (settings.deskApps ?? 'most') !== 'off' ? [settings.appsSide] : []}
               disabledTitle="The apps bar is here"
             />
@@ -679,31 +788,21 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onChange
     look: (
       <>
         <Group>
-          <Row
-            title="Style"
-            detail={
-              settings.notchStyle === 'glass'
-                ? 'A live blur of what is behind it. The notch is hidden from screenshots and screen sharing while on'
-                : settings.notchStyle === 'mica'
-                  ? 'Your wallpaper, blurred, like Windows 11'
-                  : 'A soft charcoal, like a MacBook notch'
-            }
-          >
+          <Row title="Style">
             <Segmented
               id="style"
               options={[
                 { id: 'black', label: 'Default' },
-                { id: 'mica', label: 'Mica' },
                 { id: 'glass', label: 'Glass' },
               ] as const}
               value={settings.notchStyle}
               onChange={(v) => set('notchStyle', v)}
             />
           </Row>
-          <Row title="Ambient glow" detail="A soft light while music plays">
+          <Row title="Music glow">
             <Switch label="Ambient glow" on={settings.ambientVideo} onChange={(v) => set('ambientVideo', v)} />
           </Row>
-          <Row title="Album tint" detail="Colour the notch from the artwork">
+          <Row title="Album colours">
             <Switch label="Album tint" on={settings.albumTint} onChange={(v) => set('albumTint', v)} />
           </Row>
         </Group>
@@ -713,53 +812,71 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onChange
       <>
         <Group>
           <ShortcutSettingRow shortcut={settings.keyboardShortcut || 'Ctrl+Alt+Space'} onChange={(acc) => set('keyboardShortcut', acc)} />
-          <Row title="Start with Windows" detail="Launch deskNotch automatically when you log into Windows">
-            <Switch label="Start with Windows" on={settings.startOnBoot} onChange={(v) => set('startOnBoot', v)} />
-          </Row>
-          <Row title="Hide on Fullscreen" detail="Automatically hide deskNotch when another app enters fullscreen">
-            <Switch label="Hide on Fullscreen" on={settings.hideOnFullscreen ?? true} onChange={(v) => set('hideOnFullscreen', v)} />
-          </Row>
+          <UpdateRow />
         </Group>
         <Group>
-          <Row title="Display" detail="Choose which monitor deskNotch appears on">
-            {(() => {
-              const displayOpts = [
-                ...displays.map((d, i) => ({
-                  id: d.id,
-                  label: `Display ${i + 1}`,
-                })),
-                ...(displays.length > 1 ? [{ id: 'both', label: 'Both' }] : []),
-              ]
-              const currentVal =
-                settings.selectedDisplayId && settings.selectedDisplayId !== 'primary'
-                  ? settings.selectedDisplayId
-                  : displays.length > 1
-                    ? 'both'
-                    : (displays[0]?.id || 'both')
-
-              return displayOpts.length <= 4 ? (
+          {store ? (
+            <Row title="Start with Windows" detail="Managed in Windows Settings">
+              <button
+                type="button"
+                onClick={(event) => {
+                  halt(event)
+                  void window.bridge?.invoke('settings:open-startup')
+                }}
+                className="h-[24px] shrink-0 rounded-full bg-white/[0.08] px-3 text-[11px] font-medium text-white/75 transition-colors hover:bg-white/[0.14] hover:text-white"
+              >
+                Open
+              </button>
+            </Row>
+          ) : (
+            <Row title="Start with Windows" detail="Launch deskNotch automatically when you log into Windows">
+              <Switch label="Start with Windows" on={settings.startOnBoot} onChange={(v) => set('startOnBoot', v)} />
+            </Row>
+          )}
+          <Row title="Hide in fullscreen" detail="Videos, games and F11">
+            <Switch label="Hide on Fullscreen" on={settings.hideOnFullscreen ?? true} onChange={(v) => set('hideOnFullscreen', v)} />
+          </Row>
+          <Row
+            title="Hide in screenshots"
+            detail={settings.notchStyle === 'glass' ? 'Always on with Glass' : 'Also screen recordings and sharing'}
+          >
+            <Switch
+              label="Hide in screenshots"
+              on={settings.notchStyle === 'glass' || (settings.hideInScreenshots ?? false)}
+              disabled={settings.notchStyle === 'glass'}
+              onChange={(v) => set('hideInScreenshots', v)}
+            />
+          </Row>
+          <Row title="Shrink over browsers" detail="Keeps browser tabs visible">
+            <Switch label="Tuck behind browsers" on={settings.tuckForBrowsers ?? false} onChange={(v) => set('tuckForBrowsers', v)} />
+          </Row>
+        </Group>
+        {displays.length > 1 && (
+          <Group>
+            <Row title="Display">
+              {displays.length <= 3 ? (
                 <Segmented
                   id="display"
-                  options={displayOpts}
-                  value={currentVal}
+                  options={displayOptions}
+                  value={displayValue}
                   onChange={(v) => set('selectedDisplayId', v)}
                 />
               ) : (
                 <select
-                  value={currentVal}
+                  value={displayValue}
                   onChange={(e) => set('selectedDisplayId', e.target.value)}
                   className="h-[24px] max-w-[190px] rounded-[7px] bg-white/[0.1] px-2 text-[11px] font-medium text-white outline-none border border-white/10"
                 >
-                  {displayOpts.map((opt) => (
-                    <option key={opt.id} value={opt.id} className="bg-[#141418] text-white">
-                      {opt.label}
+                  {displayOptions.map((option) => (
+                    <option key={option.id} value={option.id} className="bg-[#141418] text-white">
+                      {option.label}
                     </option>
                   ))}
                 </select>
-              )
-            })()}
-          </Row>
-        </Group>
+              )}
+            </Row>
+          </Group>
+        )}
       </>
     ),
   }
@@ -767,7 +884,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onChange
   return (
     <div className="flex h-full gap-4" onClick={halt}>
       {/* The sections. */}
-      <nav className="flex w-[150px] shrink-0 flex-col gap-0.5">
+      <nav className="flex w-[124px] shrink-0 flex-col gap-0.5">
         {SECTIONS.map((s) => {
           const on = s.id === section
           return (
@@ -787,10 +904,22 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onChange
             </button>
           )
         })}
+        {/* The project's GitHub, at the foot of the sidebar whatever the section. */}
+        <button
+          type="button"
+          onClick={(event) => {
+            halt(event)
+            void window.bridge?.invoke('app:open-repo')
+          }}
+          className="mt-auto flex h-[28px] items-center gap-2 rounded-[9px] px-2.5 text-[12px] font-medium text-white/45 transition-colors hover:bg-white/[0.06] hover:text-white"
+        >
+          <GitHubMark />
+          GitHub
+        </button>
       </nav>
 
       {/* One section at a time. */}
-      <div className="min-w-0 flex-1 overflow-y-auto pr-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <div className="min-w-0 flex-1 overflow-y-auto pr-1 [scrollbar-color:rgba(255,255,255,0.18)_transparent] [scrollbar-width:thin]">
         <AnimatePresence mode="wait" initial={false}>
           <motion.div
             key={section}
@@ -800,7 +929,12 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onChange
             transition={{ duration: 0.16 }}
           >
             <h2 className="mb-2.5 px-1 text-[15px] font-semibold text-white">{SECTIONS.find((s) => s.id === section)?.label}</h2>
-            {content[section]}
+            {SECTIONS.find((s) => s.id === section)?.parts.map((part) => (
+              <React.Fragment key={part.id}>
+                {part.title && <h3 className="mb-1.5 mt-1 px-1 text-[11.5px] font-medium text-white/45">{part.title}</h3>}
+                {content[part.id]}
+              </React.Fragment>
+            ))}
           </motion.div>
         </AnimatePresence>
       </div>

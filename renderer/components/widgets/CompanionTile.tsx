@@ -1,43 +1,44 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { AnimatePresence, motion, useMotionValue, useSpring } from 'motion/react'
 import { BotAvatar, botAvatarPalette } from 'bot-avatars'
-import { Check, ChevronRight, Moon, Plus, RotateCcw, Sun } from 'lucide-react'
+import { BellRing, ChevronRight, Moon, RotateCcw, Sun, X } from 'lucide-react'
 import { Tile, TileLabel } from '../ui/tile'
 import { ThinkingOrb } from 'thinking-orbs'
 import { ringFrame } from '../ui/complication'
-import { QuickAdd } from './QuickAdd'
 import { ScrollingText } from '../notch/ScrollingText'
 import { useNow } from '../../hooks/useNow'
-import { formatReset, type ProviderLimits } from '../../hooks/useAiLimits'
+import { formatScreenTime } from '../../hooks/useScreenTime'
 import type { TaskStore } from '../../hooks/useTasks'
+import { inputTime, nextAt, untilLabel, whenLabel, type ReminderStore } from '../../hooks/useReminders'
 import type { Timer } from '../../hooks/useTimer'
 import type { Avatar } from './SettingsPanel'
 import { LENGTHS, formatLength, lengthSeconds } from '../../lib/focus'
 
 export const COMPANION_WIDTH = 236
-/** Wide: tasks mode's list, or focus's length panel. */
+/** Wide: focus's length panel. */
 export const COMPANION_OPEN_WIDTH = 468
+/** Wide: reminder mode's list beside its New reminder form. */
+export const COMPANION_REMINDER_WIDTH = 520
 
 /** What the companion is for. One at a time: each mode has its own look,
  *  its own motion and its own control. */
-export type CompanionMode = 'focus' | 'tasks' | 'time' | 'ai'
+export type CompanionMode = 'focus' | 'reminder' | 'time' | 'screen'
 export const COMPANION_MODES: { id: CompanionMode; label: string }[] = [
-  { id: 'focus', label: 'Focus' },
-  { id: 'tasks', label: 'Tasks' },
-  { id: 'time', label: 'Time' },
-  { id: 'ai', label: 'AI' },
+  { id: 'focus', label: 'Timer' },
+  { id: 'reminder', label: 'Reminder' },
+  { id: 'time', label: 'Clock' },
+  { id: 'screen', label: 'Screen time' },
 ]
 
 /** When the companion sleeps: late at night, when nothing is going on, or never. */
 export type CompanionSleeps = 'time' | 'idle' | 'never'
 export const COMPANION_SLEEPS: { id: CompanionSleeps; label: string }[] = [
-  { id: 'time', label: '23:00 – 06:00' },
+  { id: 'time', label: '11 PM – 6 AM' },
   { id: 'idle', label: 'When idle' },
   { id: 'never', label: 'Never' },
 ]
 
 
-const SHORT: Record<string, string> = { SESSION: '5h', WEEK: '7d', MONTH: '30d' }
 
 const clock = (ms: number) => {
   const total = Math.ceil(ms / 1000)
@@ -59,185 +60,140 @@ const centreOf = (el: Element | null | undefined): Point | null => {
 }
 
 /**
- * Tasks. Folded, the card shows the one thing to do next, tickable, and how
- * many wait behind it. Tap the card and it opens into the whole list,
- * scrollable, with a field to add one. The companion watches whatever row
- * the pointer is on, the task being ticked, or the field being typed in.
+ * Reminder. Folded, the card shows the next one: its time, big, and what it
+ * is about. Open, every reminder is listed (removable) beside a form to set
+ * a new one. When one comes due the notch opens on it by itself (ReminderView).
  */
-const TasksMode: React.FC<{ tasks: TaskStore; accent: string; aim: Aim; expanded: boolean; onToggle: () => void }> = ({
-  tasks,
-  accent,
-  aim,
-  expanded,
-  onToggle,
-}) => {
-  const open = tasks.tasks.filter((task) => !task.done)
-  const [adding, setAdding] = useState(false)
-  const [leaving, setLeaving] = useState<string | null>(null)
-  const [hovered, setHovered] = useState<string | null>(null)
-  const rows = useRef(new Map<string, HTMLElement>())
-  const field = useRef<HTMLDivElement>(null)
-  const header = useRef<HTMLDivElement>(null)
-  const shown = expanded ? open : open.slice(0, 1)
+const ReminderMode: React.FC<{ reminders: ReminderStore; accent: string; aim: Aim; open: boolean }> = ({ reminders, accent, aim, open }) => {
+  const figure = useRef<HTMLDivElement>(null)
+  const list = reminders.reminders
+  const next = list[0]
+  aim.current = () => centreOf(figure.current)
+  const now = useNow().getTime()
 
-  // What the eyes (and the body) follow, most specific first.
-  aim.current = () =>
-    centreOf(adding ? field.current : null) ??
-    centreOf(rows.current.get(leaving ?? hovered ?? '')) ??
-    centreOf(rows.current.get(shown[0]?.id ?? '')) ??
-    centreOf(header.current)
-
-  const finish = (id: string) => {
-    if (leaving) return
-    setLeaving(id)
-    // The strike plays with the eyes on it; then it goes and the next rises.
-    setTimeout(() => {
-      tasks.toggle(id)
-      setLeaving(null)
-    }, 380)
-  }
-
-  const row = (task: (typeof open)[number], big: boolean) => (
-    <motion.div
-      key={task.id}
-      ref={(el: HTMLDivElement | null) => {
-        if (el) rows.current.set(task.id, el)
-        else rows.current.delete(task.id)
-      }}
-      layout
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, x: 24 }}
-      transition={{ type: 'spring', stiffness: 380, damping: 30 }}
-      onClick={(event) => {
-        halt(event)
-        finish(task.id)
-      }}
-      onMouseEnter={() => setHovered(task.id)}
-      onMouseLeave={() => setHovered((h) => (h === task.id ? null : h))}
-      className={`-mx-1.5 flex shrink-0 cursor-pointer items-center gap-2.5 px-1.5 ${big ? 'h-[34px]' : 'h-[30px]'}`}
-    >
-      <span
-        role="checkbox"
-        aria-checked={leaving === task.id}
-        aria-label="Mark done"
-        className={`grid shrink-0 place-items-center rounded-full border transition-colors ${big ? 'h-[16px] w-[16px]' : 'h-[13px] w-[13px]'}`}
-        style={{
-          borderColor: leaving === task.id ? accent : hovered === task.id ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.28)',
-          background: leaving === task.id ? accent : 'transparent',
-        }}
-      >
-        {leaving === task.id && <Check size={big ? 10 : 8} strokeWidth={3.2} className="text-black" />}
-      </span>
-      <span className="min-w-0 flex-1 overflow-hidden">
-        {/* Sized to the words, so the strike is exactly as long as the text. */}
-        <span className="relative inline-block max-w-full align-middle">
-          {/* Long names scroll through instead of being cut off. */}
-          <ScrollingText className={`leading-tight ${big ? 'text-[15px] font-semibold text-white' : 'text-[12.5px] text-white/85'}`}>
-            {task.label}
-          </ScrollingText>
-          {/* The strike, drawn left to right before the task leaves. */}
-          <motion.span
-            aria-hidden
-            className="absolute left-0 top-1/2 h-[1.5px] w-full origin-left rounded-full"
-            style={{ background: accent }}
-            initial={false}
-            animate={{ scaleX: leaving === task.id ? 1 : 0 }}
-            transition={{ duration: 0.3, ease: 'easeOut' }}
-          />
-        </span>
-      </span>
-    </motion.div>
-  )
-
-  return (
-    // Clicks anywhere in the task column stay here — a near-miss must never
-    // fold the list. The header (and the hint when folded) is the toggle.
-    <div className="flex h-full min-w-0 flex-col justify-center" onClick={halt}>
-      <div
-        ref={header}
-        onClick={(event) => {
-          halt(event)
-          onToggle()
-        }}
-        className="flex shrink-0 cursor-pointer items-baseline justify-between gap-2 py-1"
-      >
-        <TileLabel>{expanded ? 'Tasks' : open.length ? 'Up next' : 'Tasks'}</TileLabel>
-        {expanded && open.length > 0 && <span className="text-[10.5px] tabular-nums leading-none text-white/35">{open.length}</span>}
-        {!expanded && !adding && open.length === 0 && (
-          <button
-            type="button"
-            aria-label="Add a task"
-            onClick={(event) => {
-              halt(event)
-              setAdding(true)
-            }}
-            className="grid h-[20px] w-[20px] place-items-center rounded-full text-white/45 transition-colors hover:bg-white/[0.08] hover:text-white"
+  if (open) {
+    return (
+      <div className="flex h-full min-w-0 flex-col py-0.5">
+        <TileLabel>{list.length ? `Reminders · ${list.length}` : 'Reminders'}</TileLabel>
+        {list.length ? (
+          <div
+            onWheel={halt}
+            className="mt-1 min-h-0 flex-1 overflow-y-auto pr-1 [scrollbar-color:rgba(255,255,255,0.18)_transparent] [scrollbar-width:thin]"
           >
-            <Plus size={12} strokeWidth={2.2} />
-          </button>
+            {list.map((r) => (
+              <div key={r.id} onClick={halt} className="group/r flex items-start gap-2 rounded-[8px] px-1 py-1 hover:bg-white/[0.05]">
+                <div className="min-w-0 flex-1">
+                  <span className="block text-[12px] font-semibold tabular-nums leading-tight" style={{ color: r.at <= now ? accent : 'white' }}>
+                    {r.at <= now ? `Now · ${whenLabel(r.at)}` : whenLabel(r.at)}
+                  </span>
+                  {r.message && <span className="block break-words text-[11px] leading-snug text-white/55">{r.message}</span>}
+                </div>
+                <button
+                  type="button"
+                  aria-label="Remove reminder"
+                  onClick={(event) => {
+                    halt(event)
+                    reminders.remove(r.id)
+                  }}
+                  className="mt-0.5 grid h-[18px] w-[18px] shrink-0 place-items-center rounded-full text-white/35 opacity-0 transition-opacity hover:bg-white/[0.1] hover:text-white group-hover/r:opacity-100"
+                >
+                  <X size={11} strokeWidth={2.2} />
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <span className="mt-1.5 text-[12px] leading-snug text-white/40">None yet. Pick a time on the right.</span>
         )}
       </div>
+    )
+  }
 
-      {adding && !expanded && (
-        <div
-          ref={field}
-          onClick={halt}
-          className="mt-1.5 flex h-[24px] shrink-0 items-center gap-2 rounded-[8px] px-1.5"
-          style={{ background: `color-mix(in srgb, ${accent} 12%, transparent)` }}
-        >
-          <Plus size={11} strokeWidth={2.4} style={{ color: accent }} className="shrink-0" />
-          <QuickAdd tasks={tasks} onDone={() => setAdding(false)} className="!text-[12.5px]" />
-        </div>
-      )}
-
-      {expanded ? (
-        // The whole list, scrolling inside the card, fading at its bottom edge.
-        <div
-          onWheel={halt}
-          onClick={halt}
-          className="mt-0.5 flex max-h-[90px] min-h-0 flex-col overflow-y-auto overflow-x-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden [mask-image:linear-gradient(to_bottom,transparent,black_6px,black_calc(100%-14px),transparent)]"
-        >
-          <AnimatePresence initial={false} mode="popLayout">
-            {shown.map((task) => row(task, false))}
-          </AnimatePresence>
-          {/* Adding is the list's last line, the way a notes list works. */}
-          {adding ? (
-            <div ref={field} onClick={halt} className="-mx-1.5 flex h-[30px] shrink-0 items-center gap-2.5 px-1.5">
-              <span className="h-[13px] w-[13px] shrink-0 rounded-full border border-dashed border-white/35" />
-              <QuickAdd tasks={tasks} onDone={() => setAdding(false)} className="!text-[12.5px]" />
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={(event) => {
-                halt(event)
-                setAdding(true)
-              }}
-              className="-mx-1.5 flex h-[30px] shrink-0 items-center gap-2.5 px-1.5 text-left text-[12.5px] text-white/35 transition-colors hover:text-white/70"
-            >
-              <Plus size={13} strokeWidth={2} className="shrink-0" />
-              New task
-            </button>
-          )}
+  return (
+    <div className="flex h-full min-w-0 flex-col justify-center">
+      <TileLabel>{next ? (next.at <= now ? 'Reminder · now' : `Reminder · ${untilLabel(next.at, now)}`) : 'Reminder'}</TileLabel>
+      {next ? (
+        <div ref={figure} className="mt-1 min-w-0">
+          <span className="block text-[24px] font-semibold leading-none tracking-[-0.03em] tabular-nums text-white">{whenLabel(next.at)}</span>
+          <span className="mt-1.5 line-clamp-2 break-words text-[11.5px] leading-snug text-white/55">
+            {next.message || (list.length > 1 ? `+${list.length - 1} more` : 'No message')}
+          </span>
         </div>
       ) : (
-        <div className="mt-0.5 flex flex-col">
-          <AnimatePresence initial={false} mode="popLayout">
-            {shown.map((task) => row(task, true))}
-          </AnimatePresence>
-          <span
-            onClick={(event) => {
-              halt(event)
-              if (open.length) onToggle()
-            }}
-            className="mt-1 cursor-pointer truncate py-1 text-[10.5px] leading-none text-white/40 hover:text-white/70"
-          >
-            {open.length === 0 ? (adding ? '' : 'Nothing left today') : open.length > 1 ? `+${open.length - 1} more · tap` : 'Last one'}
-          </span>
+        <div ref={figure} className="mt-1.5 flex items-center gap-2 text-white/45">
+          <BellRing size={15} strokeWidth={2} style={{ color: accent }} />
+          <span className="text-[12.5px] leading-snug">Tap to set a reminder</span>
         </div>
       )}
     </div>
+  )
+}
+
+/** Quick times for the form: they fill the time field, and Set confirms. */
+const SOON = [
+  { label: '10 min', ms: 10 * 60_000 },
+  { label: '30 min', ms: 30 * 60_000 },
+  { label: '1 hour', ms: 60 * 60_000 },
+]
+
+/** Setting a reminder: a time (the clock's own picker), an optional message, Set. */
+const ReminderForm: React.FC<{ reminders: ReminderStore; accent: string }> = ({ reminders, accent }) => {
+  const [time, setTime] = useState(() => inputTime(10 * 60_000))
+  const [message, setMessage] = useState('')
+  const set = () => {
+    if (!time) return
+    reminders.add(nextAt(time), message)
+    setMessage('')
+    setTime(inputTime(10 * 60_000))
+  }
+  return (
+    <motion.div
+      initial={{ opacity: 0, x: 8 }}
+      animate={{ opacity: 1, x: 0 }}
+      transition={{ duration: 0.2, delay: 0.08 }}
+      className="flex h-full w-[200px] shrink-0 flex-col border-l border-white/[0.08] pl-3"
+      onClick={halt}
+    >
+      <TileLabel>New reminder</TileLabel>
+      <div className="mt-1.5 flex gap-1.5">
+        <input
+          type="time"
+          value={time}
+          aria-label="Time"
+          onChange={(event) => setTime(event.target.value)}
+          className="h-[26px] min-w-0 flex-1 rounded-[8px] bg-white/[0.08] px-2 text-[12px] font-medium text-white outline-none [color-scheme:dark] focus:bg-white/[0.12]"
+        />
+        <button
+          type="button"
+          onClick={set}
+          disabled={!time}
+          className="h-[26px] shrink-0 rounded-full px-3 text-[11px] font-semibold text-black disabled:opacity-40"
+          style={{ background: accent }}
+        >
+          Set
+        </button>
+      </div>
+      <input
+        value={message}
+        maxLength={120}
+        placeholder="Message (optional)"
+        onChange={(event) => setMessage(event.target.value)}
+        onKeyDown={(event) => event.key === 'Enter' && set()}
+        className="mt-1.5 h-[26px] rounded-[8px] bg-white/[0.08] px-2 text-[12px] text-white outline-none placeholder:text-white/30 focus:bg-white/[0.12]"
+      />
+      <div className="mt-1.5 flex gap-1">
+        {SOON.map((q) => (
+          <button
+            key={q.label}
+            type="button"
+            onClick={() => setTime(inputTime(q.ms))}
+            className="h-[22px] flex-1 rounded-full bg-white/[0.06] text-[10.5px] font-medium text-white/60 transition-colors hover:bg-white/[0.12] hover:text-white"
+          >
+            {q.label}
+          </button>
+        ))}
+      </div>
+    </motion.div>
   )
 }
 
@@ -392,83 +348,22 @@ const TimeMode: React.FC<{ now: Date; accent: string; aim: Aim; expanded: boolea
 }
 
 /**
- * AI: the tightest limit as a big number that counts up to its value, over
- * a ten-segment meter that fills in turn. Past 80% it all turns warning
- * orange and the last lit segment pulses.
+ * Screen time: today's total from ScreenWise as a big figure, the same count
+ * ScreenWise's own dashboard shows.
  */
-const AiMode: React.FC<{ limits: ProviderLimits[]; accent: string; aim: Aim }> = ({ limits, accent, aim }) => {
-  const meter = useRef<HTMLDivElement>(null)
-  const counted = useRef(0)
-  const tight = limits
-    .flatMap((p) => ('limits' in p ? p.limits.map((l) => ({ provider: p.name, ...l })) : []))
-    .sort((a, b) => b.used - a.used)[0]
-  const used = tight ? Math.round(tight.used) : 0
-  const hot = used >= 80
-  const color = hot ? 'rgb(255, 95, 46)' : accent
-  const lit = Math.round(used / 10)
-
-  // Counts up from zero whenever the reading changes.
-  const [shown, setShown] = useState(0)
-  useEffect(() => {
-    let frame = 0
-    const from = performance.now()
-    const tick = (t: number) => {
-      const k = Math.min(1, (t - from) / 700)
-      counted.current = used * (1 - Math.pow(1 - k, 3))
-      setShown(Math.round(counted.current))
-      if (k < 1) frame = requestAnimationFrame(tick)
-    }
-    frame = requestAnimationFrame(tick)
-    return () => cancelAnimationFrame(frame)
-  }, [used])
-
+const ScreenMode: React.FC<{ ms: number | null; aim: Aim }> = ({ ms, aim }) => {
+  const figure = useRef<HTMLSpanElement>(null)
   aim.current = () => {
-    const r = meter.current?.getBoundingClientRect()
-    if (!r) return null
-    return { x: r.left + (r.width * Math.max(0.05, counted.current / 100)), y: r.top + r.height / 2 }
+    const r = figure.current?.getBoundingClientRect()
+    return r ? { x: r.left + r.width / 2, y: r.top + r.height / 2 } : null
   }
-
-  if (!tight) {
-    return (
-      <div className="min-w-0">
-        <TileLabel>AI</TileLabel>
-        <span className="mt-1.5 block text-[13px] text-white/40">No AI tools signed in</span>
-      </div>
-    )
-  }
-
   return (
     <div className="min-w-0">
-      <TileLabel>{`${tight.provider} · ${SHORT[tight.label] ?? tight.label}`}</TileLabel>
-
-      <div className="mt-1 flex items-baseline gap-1">
-        <span className="text-[28px] font-semibold leading-none tracking-[-0.04em] tabular-nums" style={{ color: hot ? color : 'white' }}>
-          {shown}
-        </span>
-        <span className="text-[13px] font-semibold text-white/45">% used</span>
-      </div>
-
-      <div ref={meter} className="mt-2.5 flex gap-[3px]">
-        {Array.from({ length: 10 }, (_, i) => (
-          <motion.span
-            key={i}
-            className="h-[6px] flex-1 rounded-[2px]"
-            initial={false}
-            animate={{
-              background: i < lit ? color : 'rgba(255,255,255,0.1)',
-              opacity: hot && i === lit - 1 ? [1, 0.35, 1] : 1,
-            }}
-            transition={{
-              background: { delay: i * 0.05, duration: 0.2 },
-              opacity: hot && i === lit - 1 ? { duration: 1.2, repeat: Infinity } : { duration: 0.2 },
-            }}
-          />
-        ))}
-      </div>
-
-      <span className="mt-1.5 block truncate text-[10.5px] leading-none text-white/40">
-        {formatReset(tight.resetsAt) || `${100 - used}% left`}
+      <TileLabel>Screen time</TileLabel>
+      <span ref={figure} className="mt-1 block text-[28px] font-semibold leading-none tracking-[-0.04em] tabular-nums text-white">
+        {ms == null ? '—' : formatScreenTime(ms)}
       </span>
+      <ScrollingText className="mt-2 text-[10.5px] leading-none text-white/40">Today, from ScreenWise</ScrollingText>
     </div>
   )
 }
@@ -690,8 +585,11 @@ interface CompanionTileProps {
   avatar: Avatar
   photo: string | null
   tasks: TaskStore
+  /** For reminder mode; the desk's companion, always in focus, goes without. */
+  reminders?: ReminderStore
   timer: Timer
-  limits: ProviderLimits[]
+  /** Today's screen time from ScreenWise, for screen mode. */
+  screenMs?: number | null
   /** The current track, if any: a new one is a moment to react to. */
   track: string | null
   playing: boolean
@@ -699,7 +597,7 @@ interface CompanionTileProps {
   sleeps: CompanionSleeps
   minutes: number
   onMinutes: (m: number) => void
-  /** Focus: the lengths panel is open. Tasks: the whole list is showing. */
+  /** Focus: the lengths panel is open. Reminder: the list and form are showing. */
   open: boolean
   onToggle: () => void
 }
@@ -714,8 +612,9 @@ export const CompanionTile: React.FC<CompanionTileProps> = ({
   avatar,
   photo,
   tasks,
+  reminders,
   timer,
-  limits,
+  screenMs = null,
   track,
   playing,
   mode,
@@ -768,7 +667,6 @@ export const CompanionTile: React.FC<CompanionTileProps> = ({
   const state = bursting ? 'working' : asleep ? 'sleeping' : 'default'
   /** The companion's own colour: every mode wears it. */
   const accent = avatar === 'photo' ? '#ffffff' : botAvatarPalette[avatar]
-  const hot = mode === 'ai' && limits.some((p) => 'limits' in p && p.limits.some((l) => l.used >= 80))
   /** Each mode's own body language, on top of the lean, while hovered. Sleep
    *  breathing stays regardless. A task done gets a hop. */
   const idleMove =
@@ -778,18 +676,16 @@ export const CompanionTile: React.FC<CompanionTileProps> = ({
         ? { animate: { rotate: 0, x: 0, y: 0, scale: 1, scaleX: 1, scaleY: 1 }, transition: { duration: 0.4 } }
         : mode === 'focus' && timer.isRunning
           ? { animate: { rotate: [-2.5, 2.5, -2.5] }, transition: { duration: 4, repeat: Infinity, ease: 'easeInOut' as const } }
-          : hot
-            ? { animate: { rotate: [0, -3, 3, -2, 2, 0], x: [0, -1, 1, -1, 1, 0] }, transition: { duration: 0.6, repeat: Infinity, repeatDelay: 1.6 } }
-            : mode === 'time'
+          : mode === 'time'
               ? { animate: { y: [0, -3, 0], scale: [1, 1.02, 1] }, transition: { duration: 4, repeat: Infinity, ease: 'easeInOut' as const } }
               : { animate: { rotate: 0, x: 0, y: 0, scale: 1 }, transition: { duration: 0.4 } }
   const showLengths = open && mode === 'focus' && !timer.isRunning && !(timer.remainingMs > 0 && !timer.finished)
 
   return (
     <Tile
-      width={showLengths || (mode === 'tasks' && open) ? COMPANION_OPEN_WIDTH : mode === 'time' && open ? COMPANION_TIME_WIDTH : COMPANION_WIDTH}
-      onClick={mode === 'tasks' || mode === 'time' ? onToggle : undefined}
-      label={mode === 'time' ? (open ? 'Fold the day' : 'Show the day') : open ? 'Fold the tasks' : 'Show all tasks'}
+      width={showLengths ? COMPANION_OPEN_WIDTH : mode === 'reminder' && open ? COMPANION_REMINDER_WIDTH : mode === 'time' && open ? COMPANION_TIME_WIDTH : COMPANION_WIDTH}
+      onClick={mode === 'reminder' || mode === 'time' ? onToggle : undefined}
+      label={mode === 'time' ? (open ? 'Fold the day' : 'Show the day') : open ? 'Fold the reminders' : 'Show the reminders'}
       clip={false}
       tinted
       glow={
@@ -808,15 +704,7 @@ export const CompanionTile: React.FC<CompanionTileProps> = ({
             ) : (
               <motion.div style={{ x, y, rotate }}>
                 <motion.div {...idleMove}>
-                  {/* A hop each time a task is finished: up, stretch, land, squash. */}
-                  <motion.div
-                    key={done}
-                    initial={false}
-                    animate={mode === 'tasks' ? { y: [0, -14, 0, 0], scaleY: [1, 1.08, 0.9, 1], scaleX: [1, 0.95, 1.08, 1] } : {}}
-                    transition={{ duration: 0.55, times: [0, 0.35, 0.7, 1], ease: 'easeOut' }}
-                  >
-                    <BotAvatar type={avatar} size={84} theme="dark" state={state} {...CALM} />
-                  </motion.div>
+                  <BotAvatar type={avatar} size={84} theme="dark" state={state} {...CALM} />
                 </motion.div>
               </motion.div>
             )}
@@ -862,12 +750,14 @@ export const CompanionTile: React.FC<CompanionTileProps> = ({
               className="h-full min-w-0"
             >
               {mode === 'focus' && <div className="flex h-full items-center"><FocusMode timer={timer} minutes={minutes} accent={accent} open={open} onOpen={onToggle} /></div>}
-              {mode === 'tasks' && <TasksMode tasks={tasks} accent={accent} aim={aim} expanded={open} onToggle={onToggle} />}
+              {mode === 'reminder' && reminders && <ReminderMode reminders={reminders} accent={accent} aim={aim} open={open} />}
               {mode === 'time' && <div className="flex h-full items-center"><TimeMode now={now} accent={accent} aim={aim} expanded={open} /></div>}
-              {mode === 'ai' && <div className="flex h-full items-center"><AiMode limits={limits} accent={accent} aim={aim} /></div>}
+              {mode === 'screen' && <div className="flex h-full items-center"><ScreenMode ms={screenMs} aim={aim} /></div>}
             </motion.div>
           </AnimatePresence>
         </div>
+
+        {mode === 'reminder' && open && reminders && <ReminderForm reminders={reminders} accent={accent} />}
 
         {/* Focus only: every length, and a custom one, beside the card. */}
         {showLengths && (

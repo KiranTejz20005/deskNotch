@@ -1,6 +1,6 @@
-# How deskNotch talks to Windows
+# How DeskNotch talks to Windows
 
-This file explains every place deskNotch reaches outside itself into Windows: reading what music is playing, noticing a screenshot, seeing that the microphone is on, and so on. Settings and tasks are left out; they are just a JSON file on disk.
+This file explains every place DeskNotch reaches outside itself into Windows: reading what music is playing, noticing a screenshot, seeing that the microphone is on, and so on. Settings and tasks are left out; they are just a JSON file on disk.
 
 **New to Electron?** Read *Start here* first. **Already know it?** Skip to *For engineers*: the architecture, the cost of every background task, the security model, and every design decision with the alternative it beat. It explains, from zero, the ideas every section below relies on. Each numbered section then opens with a short **In plain words** summary before the details, so you can read just those on a first pass.
 
@@ -9,6 +9,8 @@ This file explains every place deskNotch reaches outside itself into Windows: re
 ---
 
 ## Start here: Electron in five minutes
+
+_Two programs, one app: what Electron is, how main and renderer split the work, and what `window.bridge` is._
 
 ### What Electron is
 
@@ -20,7 +22,7 @@ A normal website runs in a browser tab and is not allowed to touch your computer
 
 Think of a restaurant.
 
-| | Restaurant | deskNotch | Folder |
+| | Restaurant | DeskNotch | Folder |
 |---|---|---|---|
 | **Renderer** | The dining room: what guests see. Waiters take orders but never cook. | The notch you see: React components, animations, buttons. It is a browser tab, so it **cannot** touch Windows. | [renderer/](renderer/) |
 | **Main** | The kitchen: guests never see it, but it can use the stove, the knives, the fridge. | A Node.js program with full access: files, the registry, running PowerShell, the window itself. | [main/](main/) |
@@ -60,7 +62,7 @@ That is the whole pattern. Every feature below is some version of **the page ask
 
 ### How main actually talks to Windows
 
-Main is Node.js, which can already read files and start programs. For the rest, deskNotch uses four tools, and **no native modules** (no C++ code that has to be compiled against Electron):
+Main is Node.js, which can already read files and start programs. For the rest, DeskNotch uses four tools, and **no native modules** (no C++ code that has to be compiled against Electron):
 
 1. **Electron's own APIs**, which wrap Windows for you: `shell.openPath` (open a file with its app), `shell.trashItem` (Recycle Bin), `nativeImage` (thumbnails), `setIgnoreMouseEvents` (click-through).
 2. **Node's `fs`**, for files and folders, including `fs.watch`, which Windows backs with a real "tell me when this folder changes" API.
@@ -108,6 +110,8 @@ Every diagram below uses the same lanes: **Renderer** (the page), **Main** (the 
 ---
 
 ## For engineers: architecture, costs, and why it is built this way
+
+_The process diagram, the idle/active cost budget per feature, the security model, and every design decision with the alternative it beat._
 
 *Start here* is the concept; this is the engineering. Every number below is the one in the code.
 
@@ -159,6 +163,9 @@ The rule it follows: **nothing slow or blocking runs on main's event loop**, bec
 | Glass style | only while Glass is on | one 15 fps screen capture shared by every surface, then a CSS blur; stops when you switch style | [Backdrop.tsx](renderer/components/notch/Backdrop.tsx) |
 | AI limits | every 2 min while shown, min gap 60 s | one HTTPS call per provider; 5 min back-off after a failure | [limits.ts](main/ipc/limits.ts) |
 | Most used apps | once per 30 min | `reg query` + one PowerShell with a C# icon helper, ~2 to 4 s cold, then cached | [apps.ts](main/ipc/apps.ts) |
+| Foreground watch | 300 ms, only while Hide in fullscreen or Shrink over browsers is on; started 2 s after launch | one long-lived PowerShell with a C# helper: foreground window's monitor, fullscreen flag (covers the monitor and not `IsZoomed`) and process name; silent unless changed. Drives Hide in fullscreen and Shrink over browsers | [fullscreen.ts](main/fullscreen.ts) |
+| Screen time | every 60 s, only while picked | read-only open of ScreenWise's SQLite (`%APPDATA%\ScreenWise`) via Node's built-in `node:sqlite`, ScreenWise's own "today" sum | [desktime.ts](main/ipc/desktime.ts) |
+| Usage page | every 2 s, only while the card is flipped to it | `os.cpus()` on request; one long-lived PowerShell reading the GPU perf counter (~1 s a sample, ~3 s the first time), killed 6 s after the last ask | [usage.ts](main/ipc/usage.ts) |
 
 ### Security model
 
@@ -209,7 +216,9 @@ The rule it follows: **nothing slow or blocking runs on main's event loop**, bec
 
 ## 1. Media playback
 
-> **In plain words:** Windows keeps one list of "what is playing right now" that every music and video app reports to. deskNotch listens to that list to show the song, and presses the keyboard's own media keys (play, next…) to control it, so it works with any player.
+_Reading now-playing from Windows' SMTC list in a worker thread, and controlling it by sending system media keys through a long-lived PowerShell._
+
+> **In plain words:** Windows keeps one list of "what is playing right now" that every music and video app reports to. DeskNotch listens to that list to show the song, and presses the keyboard's own media keys (play, next…) to control it, so it works with any player.
 
 Two directions: **reading** what's playing (continuous) and **controlling** it (on click). They use different mechanisms, because the library we read with can only observe.
 
@@ -295,6 +304,8 @@ Where the code is:
 
 ## 2. Opening the player (tap the album art)
 
+_How the app that is playing is found (Store AUMID vs. classic exe) and brought to the front via `ShowWindow` + `SetForegroundWindow`._
+
 > **In plain words:** Tapping the album art finds the window of the app that is playing (Spotify, Chrome…) and brings it to the front, the same thing clicking it on the taskbar does.
 
 Tapping the art brings the app that's playing to the front, maximised. It relies on the `sourceAppId` that SMTC gave us in 1a.
@@ -331,6 +342,8 @@ Where the code is:
 ---
 
 ## 3. The Shelf tab (Recent and Pinned parked)
+
+_Drop, thumbnail, open, reveal, drag-out: how files enter and leave the Shelf, and how the drag hands the OS the real file._
 
 > **In plain words:** A place to park files. Drop a file on the notch and its path is saved; drag it back out and Windows moves the real file wherever you drop it. Thumbnails come from the same place Explorer gets them.
 
@@ -415,6 +428,8 @@ Where the code is:
 
 ## 4. The notch window itself (click-through)
 
+_Why the strip stays click-through permanently, how the 60ms cursor poll works, and how the notch decides when the pointer has really left._
+
 > **In plain words:** The notch is drawn inside an invisible window as wide as your screen. So that the invisible part never steals your clicks, main checks where the mouse is 16 times a second and only lets the window take the click when you are actually over the notch.
 
 The notch lives in a transparent, frameless, always-on-top window as wide as the screen and 500px tall. Almost all of that window is empty, and it must never swallow a click meant for whatever is underneath.
@@ -443,7 +458,9 @@ sequenceDiagram
 
 ## 5. Screenshot catcher
 
-> **In plain words:** Windows saves every screenshot into a folder. deskNotch watches that folder, and when a new picture appears it opens the notch on it so you can drag it somewhere, keep it, or throw it away.
+_`fs.watch` on the Screenshots folder, the size-stable check, and what the Keep / Discard / Drag actions do._
+
+> **In plain words:** Windows saves every screenshot into a folder. DeskNotch watches that folder, and when a new picture appears it opens the notch on it so you can drag it somewhere, keep it, or throw it away.
 
 Windows 11's Snipping Tool (Win+Shift+S, Print Screen) saves every capture to `Pictures\Screenshots`. Watching that folder catches them as real files, for the cost of a folder watch: no polling.
 
@@ -470,7 +487,9 @@ flowchart TD
 
 ## 6. Status watcher: privacy dots, Wi-Fi, Bluetooth
 
-> **In plain words:** One small PowerShell script runs in the background and keeps asking Windows three questions: is any app using the mic or camera, which Wi-Fi am I on, and which Bluetooth devices are connected. It only speaks up when an answer changes.
+_One long-lived PowerShell polling ConsentStore (mic/camera), `netsh` (Wi-Fi) and `Get-PnpDevice` (Bluetooth), printing only on change._
+
+> **In plain words:** One small PowerShell script runs in the background and keeps asking Windows three questions: which apps are using the mic or camera, which Wi-Fi am I on, and which Bluetooth devices are connected (and how charged they are). It only speaks up when an answer changes.
 
 One PowerShell, kept alive, answers three questions and prints a line only when an answer changes.
 
@@ -478,15 +497,16 @@ One PowerShell, kept alive, answers three questions and prints a line only when 
 
 ```
 HKCU\Software\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\
-    microphone\<app>\  LastUsedTimeStart, LastUsedTimeStop
-    webcam\<app>\      LastUsedTimeStart, LastUsedTimeStop
+    microphone\<app>\              LastUsedTimeStart, LastUsedTimeStop
+    microphone\NonPackaged\<app>\  (the same, for classic exes)
+    webcam\…                       likewise
 ```
 
-A `LastUsedTimeStop` of **0** (with a start time set) means "still using it right now".
+A `LastUsedTimeStop` of **0** (with a start time set) means "still using it right now". The key's name is the app: a package family like `Microsoft.WindowsCamera_8wekyb3d8bbwe` for Store apps, or the exe's path with `#` for `\` (`C:#Program Files#Zoom#bin#Zoom.exe`) under `NonPackaged`. Main looks each up in the Start menu's list (§8: a Store app's id is its family plus `!App`, a classic app's is often its exe path) for the name Windows shows ("WhatsApp", "Camera"), and for anything not listed reads a name off the key itself ("Zoom" from `Zoom.exe`), in [privacy.ts](main/ipc/privacy.ts).
 
 **Wi-Fi.** `netsh wlan show interfaces`: its State, SSID and Signal lines.
 
-**Bluetooth.** `Get-PnpDevice -Class Bluetooth`, keeping real devices (not the radio, adapters or profiles), then each one's "is connected" device property (`{83DA6326-97A6-4088-9453-A1923F573B29} 15`). Asking every device takes a second or two, so this runs least often.
+**Bluetooth.** `Get-PnpDevice -Class Bluetooth`, keeping real devices (not the radio, adapters or profiles), then each one's "is connected" device property (`{83DA6326-97A6-4088-9453-A1923F573B29} 15`), and, for the connected ones, the battery property (`{104EA319-6EE2-4701-BD47-8DDBF425BBE5} 2`), which headsets, mice and pens report and most other devices leave empty. Asking every device takes a second or two, so this runs least often.
 
 ```mermaid
 sequenceDiagram
@@ -498,27 +518,29 @@ sequenceDiagram
     R->>M: invoke('privacy:get') (first ask starts the watcher)
     M->>P: spawn, with our process id
     loop every 1.5 s
-        P->>W: ConsentStore: any mic / webcam app with Stop = 0?
+        P->>W: ConsentStore: which mic / webcam apps have Stop = 0?
         P->>W: every ~10 s: netsh wlan show interfaces
-        P->>W: every ~30 s: connected Bluetooth devices
-        P-->>M: "mic,camera TAB ssid|signal TAB device;device" (only when it changed)
-        M-->>R: send('privacy:state', { mic, camera, wifi, bluetooth })
+        P->>W: every ~30 s: connected Bluetooth devices, and their battery
+        P-->>M: "micApps TAB camApps TAB ssid|signal TAB device|80;device|" (only when it changed)
+        M-->>R: send('privacy:state', { mic, camera, micApps, cameraApps, wifi, bluetooth })
     end
     Note over P: exits by itself if our process is gone
 ```
 
 What the closed bar does with it:
 
-- **Privacy dots**, all the time: orange while the microphone is in use, green for the camera, as on the iPhone.
-- **Wi-Fi and Bluetooth** are not shown all the time. They get a moment (§7) only when something **connects**: a new network, or a Bluetooth device that was not connected before.
+- **Privacy dots**, all the time: orange while the microphone is in use, green for the camera, as on the iPhone. When an app **starts** using one, it gets a moment (§7) in that colour: "Zoom · Microphone".
+- **Wi-Fi and Bluetooth** are not shown all the time. They get a moment (§7) only when something **connects**: a new network, or a Bluetooth device that was not connected before. A device that reports its charge says so: "Buds · Connected · 80%".
 
 Code: [privacy.ts](main/ipc/privacy.ts) (script and watcher), [usePrivacy.ts](renderer/hooks/usePrivacy.ts).
 
-## 7. "Just connected" moments (headphones, Wi-Fi, Bluetooth)
+## 7. Moments (headphones, Wi-Fi, Bluetooth, mic and camera, battery)
 
-> **In plain words:** When something connects, the closed notch shows it for a second and a half, like AirPods on an iPhone. Headphones are noticed by the browser itself; Wi-Fi and Bluetooth come from the watcher in §6.
+_Transient announcements in the closed bar: where each source comes from (browser `devicechange`, watcher §6, or battery IPC) and how duplicates are suppressed._
 
-When something connects, the closed bar gives itself to it for about a second and a half: the icon swings in, then the name and "Connected", then it slides away and the usual bar returns.
+> **In plain words:** When something happens, the closed notch shows it for a second and a half, like AirPods on an iPhone. Headphones and the battery are noticed by the browser itself; Wi-Fi, Bluetooth and the mic and camera come from the watcher in §6.
+
+When something happens, the closed bar gives itself to it for about a second and a half: the icon swings in, then the name and a word at the right edge ("Connected", "Microphone", "42%"), then it slides away and the usual bar returns.
 
 ```mermaid
 flowchart TD
@@ -529,17 +551,25 @@ flowchart TD
     D["Status watcher (§6)"] --> E{"Wi-Fi network changed<br/>to a connected one?"}
     E -->|yes| W["Moment: Wi-Fi + network name"]
     D --> F{"A Bluetooth device newly connected?"}
-    F -->|"yes, and no headphones moment in the last 30 s"| T["Moment: Bluetooth + device name"]
+    F -->|"yes, and no headphones moment in the last 30 s<br/>(or it brings a battery level)"| T["Moment: Bluetooth + device name + charge"]
+    D --> G{"An app newly using the mic or camera?"}
+    G -->|yes| U["Moment: the app's name, in the dot's colour"]
+    K["Battery Status API<br/>(Chromium, over Windows' power state)"] --> L{"Plugged in or unplugged?<br/>Fell to 20%, then 10%?"}
+    L -->|yes| V["Moment: Charging / On battery / Battery low + charge"]
 ```
 
-- What is already connected when the app starts is not news: Wi-Fi and Bluetooth changes count only after a 12 s warm-up, and devices present at start are remembered.
-- A Bluetooth headset shows as both headphones (instantly, from `devicechange`) and a Bluetooth device (later, from the watcher); the headphones moment wins, so it is not announced twice.
+- What is already connected, in use or plugged in when the app starts is not news: Wi-Fi, Bluetooth, mic and camera changes count only after a 12 s warm-up, and whatever is present at start is remembered. The one exception is a battery already low at start, which is worth saying once.
+- A Bluetooth headset shows as both headphones (instantly, from `devicechange`) and a Bluetooth device (later, from the watcher); the headphones moment wins, so it is not announced twice, unless the later one carries a charge the first could not know.
+- While the battery is at 20% or under and not charging, the bar also keeps the charge in view at its right edge, in red, beside the privacy dots. A desktop PC reports full and charging forever, so it never shows anything.
+- The bar is gone while the notch is open (hovered or locked), so the same readings sit on a **Right now** card in the glance ([StatusTile.tsx](renderer/components/widgets/StatusTile.tsx)): a row per app on the microphone or camera, in the dot's colour, and one for the battery. The card only joins the row while it has something to say, and leaves with the last reading. Its ⇄ flips it to **Usage**: CPU, GPU and memory as three rings, one inside the other, in light, plain and deep shades of the companion's colour, with a legend naming each, read as in the cost table above and only while that face is showing ([usage.ts](main/ipc/usage.ts)). On Usage the card stays put whatever is happening.
 
-Code: [useHeadphones.ts](renderer/hooks/useHeadphones.ts), the moments in [home.tsx](renderer/pages/home.tsx), the view in [CollapsedStatus.tsx](renderer/components/notch/CollapsedStatus.tsx).
+Code: [useHeadphones.ts](renderer/hooks/useHeadphones.ts), [useBattery.ts](renderer/hooks/useBattery.ts), the moments in [home.tsx](renderer/pages/home.tsx), the view in [CollapsedStatus.tsx](renderer/components/notch/CollapsedStatus.tsx).
 
 ## 8. Most used and favourite apps
 
-> **In plain words:** Windows secretly counts how long you use each app (that is where the Start menu's "Most used" comes from). deskNotch reads that count, asks Windows for each app's real name and icon, and launches an app the same way the Start menu does.
+_Reading UserAssist (focus-time tallies, ROT13-encoded), resolving names and icons via a C# helper in PowerShell, and launching via `shell:AppsFolder`._
+
+> **In plain words:** Windows secretly counts how long you use each app (that is where the Start menu's "Most used" comes from). DeskNotch reads that count, asks Windows for each app's real name and icon, and launches an app the same way the Start menu does.
 
 **Most used** is Windows' own count. Explorer keeps a tally per app under `UserAssist` (the Start menu's "Most used" is built from it). Each value's name is the app, **ROT13-encoded**, and its 72-byte data holds the launch count (bytes 4–7) and **time in focus in ms** (bytes 12–15).
 
@@ -572,6 +602,8 @@ sequenceDiagram
 
 ## 9. Smaller touches
 
+_Wallpaper path, accent colour, CPU/GPU/memory usage, the 12-hour clock, and start-on-boot — the one-liners that didn't need their own section._
+
 > **In plain words:** A few small things that also read from Windows: your wallpaper (to tint the glass), your accent colour, and the "start with Windows" switch.
 
 | What | How it talks to Windows | Code |
@@ -580,6 +612,7 @@ sequenceDiagram
 | **Glass** style | A live capture of the screen, blurred, on the notch (open or closed), the dock and the apps tray: **one** capture shared by all of them (reference-counted), at 15 fps, while Glass is on. Small surfaces blur less so what is behind stays recognisable. The window is excluded from capture with `setContentProtection(true)` (WDA_EXCLUDEFROMCAPTURE), so the capture shows what is **behind** the notch, not the notch; `desktopCapturer` picks the display's source and the renderer streams it with `getUserMedia` | [system.ts](main/ipc/system.ts), [Backdrop.tsx](renderer/components/notch/Backdrop.tsx) |
 | Glass tint from the wallpaper | Reads `%APPDATA%\Microsoft\Windows\Themes\TranscodedWallpaper`, the copy of the current wallpaper Windows keeps | [system.ts:20](main/ipc/system.ts#L20) |
 | Accent colour | `systemPreferences.getAccentColor()`, the colour set in Personalisation | [system.ts:40](main/ipc/system.ts#L40) |
+| **Usage** (CPU, GPU, memory) | CPU and memory from Node's `os`; GPU from the `GPU Engine` performance counter, via a PowerShell kept alive only while the Usage face is showing. It is the busiest engine type, as Task Manager counts it | [usage.ts](main/ipc/usage.ts) |
 | 12-hour clock | Built from the system time; the closed bar shows it on the left whenever no focus session or music is running | [time.ts](renderer/lib/time.ts) |
 | Start on boot | `app.setLoginItemSettings({ openAtLogin })`, which writes the `HKCU\…\Run` registry entry | [settings.ts:6](main/ipc/settings.ts#L6) |
 | AI limits | Reads the login Claude Code and Codex keep in your user folder, then calls only their own servers | [limits.ts](main/ipc/limits.ts) |
@@ -587,6 +620,8 @@ sequenceDiagram
 ---
 
 ## The one shared piece: the `user32.dll` shim
+
+_`ShowWindow`, `SetForegroundWindow`, and `keybd_event` — declared once in PowerShell's `Add-Type` and shared by media keys and player-focus._
 
 Features 1 and 2 need these Windows functions. They are declared once, as a PowerShell `Add-Type` block, and reused:
 
@@ -601,6 +636,8 @@ public class W {
 Defined at [main/ipc/media.ts:14](main/ipc/media.ts#L14).
 
 ## Known limits, in one place
+
+_What DeskNotch cannot guarantee, and why: focus rules, polling gaps, name-matching, and platform constraints._
 
 - **Focus can be refused.** `SetForegroundWindow` is subject to Windows' focus-stealing rules. When refused, the target flashes on the taskbar. There is no reliable way around this without the target's cooperation.
 - **Media keys go to the "current" player.** With two players open, Windows decides which one, not us.
@@ -620,6 +657,8 @@ Defined at [main/ipc/media.ts:14](main/ipc/media.ts#L14).
 ---
 
 ## Glossary
+
+_Definitions for every term used in this file: Electron, IPC, SMTC, AUMID, UserAssist, ConsentStore, and more._
 
 | Term | Meaning |
 |---|---|
@@ -642,7 +681,7 @@ Defined at [main/ipc/media.ts:14](main/ipc/media.ts#L14).
 | **UserAssist** | A registry key where Explorer counts how often, and how long, you use each app. |
 | **ConsentStore** | The registry record of which apps used the microphone or camera, and when. |
 | **ROT13** | A trivial letter shift (A↔N, B↔O…) Windows uses to scramble UserAssist names. |
-| **Native module** | Compiled C/C++ code loaded by Node; powerful but has to be rebuilt for each Electron version. deskNotch uses none. |
+| **Native module** | Compiled C/C++ code loaded by Node; powerful but has to be rebuilt for each Electron version. DeskNotch uses none. |
 | **Worker thread** | A second JavaScript thread in main, so slow work (media) never freezes the notch. |
 | **Click-through** | A window that lets mouse clicks pass to whatever is underneath it. |
 | **Hit test** | Checking whether the mouse is over the notch, to decide who gets the click. |
