@@ -12,6 +12,16 @@
  * electron-updater verify them too.
  */
 import { app, BrowserWindow, ipcMain, powerMonitor } from 'electron'
+// A namespace import, read both ways, because the two builds load this
+// CommonJS package differently and each broke on one form:
+// - packaged (real ES module import): its exports sit under `default`, and a
+//   named `autoUpdater` import is a SyntaxError that stops the app launching;
+// - dev (webpack's CommonJS interop): there is no `default`, the exports are
+//   the namespace itself.
+import * as electronUpdater from 'electron-updater'
+
+type Updater = typeof import('electron-updater')
+const { autoUpdater } = ((electronUpdater as unknown as { default?: Updater }).default ?? electronUpdater) as Updater
 
 export type UpdateState =
   | { status: 'dev' | 'store' | 'idle' | 'checking' | 'none' | 'error'; version: string }
@@ -27,13 +37,6 @@ const AWAY_SECONDS = 60
 const store = process.windowsStore === true
 
 let state: UpdateState = { status: store ? 'store' : app.isPackaged ? 'idle' : 'dev', version: app.getVersion() }
-let autoUpdater: any = null
-
-try {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const electronUpdater = require('electron-updater')
-  autoUpdater = electronUpdater.default?.autoUpdater ?? electronUpdater.autoUpdater
-} catch {}
 
 const publish = (next: UpdateState) => {
   state = next
