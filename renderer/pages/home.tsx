@@ -114,7 +114,7 @@ export default function HomePage() {
   const timer = useTimer()
   const tasks = useTasks()
   const reminders = useReminders()
-  const focusLog = useFocusLog(timer)
+  useFocusLog(timer)
   const [view, setView] = useState('glance')
 
   // A file dragged over the notch from outside: open Files, where the shelf is
