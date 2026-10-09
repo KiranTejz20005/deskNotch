@@ -1,4 +1,6 @@
 # DeskNotch
+<img width="1672" height="941" alt="2416cea1-b2ba-47ae-9ad4-26a41e42804e" src="https://github.com/user-attachments/assets/563721fc-c8a3-4829-b07b-ef03b5b1143d" />
+
 
 **The MacBook notch, reimagined for Windows.**
 
